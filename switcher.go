@@ -14,6 +14,25 @@ import (
 func SwitchMode(targetMode string, opts SwitchOptions) {
 	fmt.Printf("Switching to %s mode\n", targetMode)
 
+	if targetMode == "hybrid" {
+		rtd3Str := "False"
+		if opts.Rtd3Value != nil {
+			rtd3Str = fmt.Sprintf("%d", *opts.Rtd3Value)
+		}
+		fmt.Printf("Enable PCI-Express Runtime D3 (RTD3) Power Management: %s\n", rtd3Str)
+	} else if targetMode == "nvidia" {
+		forceCompStr := "False"
+		if opts.ForceComp {
+			forceCompStr = "True"
+		}
+		coolbitsStr := "False"
+		if opts.CoolbitsValue != nil {
+			coolbitsStr = fmt.Sprintf("%d", *opts.CoolbitsValue)
+		}
+		fmt.Printf("Enable ForceCompositionPipeline: %s\n", forceCompStr)
+		fmt.Printf("Enable Coolbits: %s\n", coolbitsStr)
+	}
+
 	state := LoadState()
 
 	// Pre-flight: Handle persistent SDDM backups
@@ -54,34 +73,47 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		os.Exit(1)
 	}
 
-	// Establish an OS signal shield to prevent incomplete executions
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
+	// Establish an OS signal shield to prevent incomplete executions during file I/O
+	_, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
 	// Execute I/O safely
 	createdFiles, err := ExecuteTransaction(plan)
 	if err != nil {
+		cancel()
 		LogError("Transaction aborted: %v", err)
 		os.Exit(1)
 	}
 
-	// Rebuild initramfs with graceful cancellation awareness
-	if err := RebuildInitramfs(ctx); err != nil {
-		LogError("Initramfs build failed or was interrupted: %v", err)
-		LogError("Triggering Emergency Rollback...")
+	// POINT OF NO RETURN
+	// Release the interrupt shield for the context. From now on, Go context won't be cancelled.
+	cancel()
+
+	// Set up a custom shield that simply ignores signals and warns the user
+	ignoreChan := make(chan os.Signal, 1)
+	signal.Notify(ignoreChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		for range ignoreChan {
+			LogWarning("\n[LOCKED] Critical kernel operation in progress. Interruptions are ignored to prevent system brick. Please wait...")
+		}
+	}()
+
+	// Rebuild initramfs natively. Because we pass context.Background() and the child process
+	// has Setpgid: true, it cannot be interrupted by the user terminal.
+	if err := RebuildInitramfs(context.Background()); err != nil {
+		LogError("Initramfs build failed natively: %v", err)
+		LogError("Triggering Emergency Rollback to restore safe state...")
 
 		if rbErr := RollbackTransaction(createdFiles); rbErr != nil {
 			LogError("CRITICAL: Rollback failed: %v", rbErr)
 		} else {
 			LogWarning("System configs safely rolled back.")
 			LogWarning("Attempting to rebuild initramfs for the rolled-back state...")
-
-			// Critical: Must use a fresh Background context because the previous one
-			// may have been cancelled by user interruption.
 			RebuildInitramfs(context.Background())
 		}
 		os.Exit(1)
 	}
+
+	signal.Stop(ignoreChan)
 
 	// Post-flight: Save updated state
 	state.CurrentMode = targetMode
@@ -113,20 +145,32 @@ func ResetSystem() {
 		ToCreate: []FileConfig{},
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
+	// Establish an OS signal shield
+	_, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
 	createdFiles, err := ExecuteTransaction(plan)
 	if err != nil {
+		cancel()
 		LogError("Reset transaction failed: %v", err)
 		os.Exit(1)
 	}
 
+	// POINT OF NO RETURN
+	cancel()
+
+	ignoreChan := make(chan os.Signal, 1)
+	signal.Notify(ignoreChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		for range ignoreChan {
+			LogWarning("\n[LOCKED] Critical kernel operation in progress. Interruptions are ignored to prevent system brick. Please wait...")
+		}
+	}()
+
 	os.Remove(StateFilePath)
 
-	if err := RebuildInitramfs(ctx); err != nil {
-		LogError("Initramfs rebuild failed or was interrupted: %v", err)
-		LogError("Triggering Emergency Rollback...")
+	if err := RebuildInitramfs(context.Background()); err != nil {
+		LogError("Initramfs build failed natively: %v", err)
+		LogError("Triggering Emergency Rollback to restore safe state...")
 
 		if rbErr := RollbackTransaction(createdFiles); rbErr != nil {
 			LogError("CRITICAL: Rollback failed: %v", rbErr)
@@ -137,6 +181,8 @@ func ResetSystem() {
 		}
 		os.Exit(1)
 	}
+
+	signal.Stop(ignoreChan)
 
 	fmt.Println("Operation completed successfully")
 }
@@ -150,6 +196,7 @@ func ResetSddm() {
 		ToCreate: []FileConfig{{Path: SddmXsetupPath, Content: SddmXsetupContent, Executable: true}},
 	}
 
+	// Protect file I/O
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 

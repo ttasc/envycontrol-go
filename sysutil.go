@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 )
 
 // Verbose controls whether debug logs and command outputs are printed.
@@ -50,6 +51,11 @@ func AssertRoot() {
 // If interrupted by context cancellation, it gracefully kills the child process.
 func RunCommand(ctx context.Context, quiet bool, name string, args ...string) (int, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+
+	// Isolate the child process from the terminal's process group.
+	// This prevents terminal signals (like Ctrl+C/SIGINT) from reaching the child directly.
+	// The child will only be killed if Go explicitly cancels the context.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if Verbose && !quiet {
 		cmd.Stdout = os.Stdout
