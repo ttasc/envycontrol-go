@@ -8,11 +8,15 @@ import (
 	"syscall"
 )
 
+// SwitchMode is the primary orchestrator for transitioning the system between graphics modes.
+// It coordinates state retrieval, daemon management, plan building, transaction execution,
+// and safe kernel initramfs rebuilding.
 func SwitchMode(targetMode string, opts SwitchOptions) {
 	fmt.Printf("Switching to %s mode\n", targetMode)
 
 	state := LoadState()
 
+	// Pre-flight: Handle persistent SDDM backups
 	if targetMode == "integrated" || targetMode == "hybrid" {
 		RestoreSddmXsetup()
 	} else if targetMode == "nvidia" {
@@ -25,6 +29,7 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		}
 	}
 
+	// Toggle the persistence daemon
 	ctxBg := context.Background()
 	if targetMode == "integrated" {
 		exitCode, _ := RunCommand(ctxBg, !Verbose, "systemctl", "disable", "nvidia-persistenced.service")
@@ -42,21 +47,25 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		}
 	}
 
+	// Build the execution plan
 	plan, err := BuildTransactionPlan(targetMode, state, opts)
 	if err != nil {
 		LogError("Failed to build transaction plan: %v", err)
 		os.Exit(1)
 	}
 
+	// Establish an OS signal shield to prevent incomplete executions
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	// Execute I/O safely
 	createdFiles, err := ExecuteTransaction(plan)
 	if err != nil {
 		LogError("Transaction aborted: %v", err)
 		os.Exit(1)
 	}
 
+	// Rebuild initramfs with graceful cancellation awareness
 	if err := RebuildInitramfs(ctx); err != nil {
 		LogError("Initramfs build failed or was interrupted: %v", err)
 		LogError("Triggering Emergency Rollback...")
@@ -67,11 +76,14 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 			LogWarning("System configs safely rolled back.")
 			LogWarning("Attempting to rebuild initramfs for the rolled-back state...")
 
+			// Critical: Must use a fresh Background context because the previous one
+			// may have been cancelled by user interruption.
 			RebuildInitramfs(context.Background())
 		}
 		os.Exit(1)
 	}
 
+	// Post-flight: Save updated state
 	state.CurrentMode = targetMode
 	if err := SaveState(state); err != nil {
 		LogWarning("Mode switched successfully, but failed to save state file: %v", err)
@@ -81,11 +93,14 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 	fmt.Println("Please reboot your computer for changes to take effect!")
 }
 
+// ResetSystem purges all configurations applied by the tool and restores
+// the system to the Linux distribution's vanilla state.
 func ResetSystem() {
 	fmt.Println("Reverting changes made by EnvyControl...")
 
 	RestoreSddmXsetup()
 
+	// A plan with empty ToCreate forces a safe, fully-backed-up deletion
 	plan := TransactionPlan{
 		ToRemove: []string{
 			BlacklistPath, UdevIntegratedPath, UdevPmPath,
@@ -126,8 +141,10 @@ func ResetSystem() {
 	fmt.Println("Operation completed successfully")
 }
 
+// ResetSddm isolates the recovery of the SDDM Xsetup script.
 func ResetSddm() {
 	fmt.Println("Restoring default Xsetup file...")
+
 	plan := TransactionPlan{
 		ToRemove: []string{},
 		ToCreate: []FileConfig{{Path: SddmXsetupPath, Content: SddmXsetupContent, Executable: true}},
@@ -138,7 +155,6 @@ func ResetSddm() {
 
 	_, err := ExecuteTransaction(plan)
 	if err != nil {
-
 		if ctx.Err() == context.Canceled {
 			LogError("Reset SDDM was interrupted by user.")
 		} else {

@@ -8,23 +8,36 @@ import (
 	"os/exec"
 )
 
+// Verbose controls whether debug logs and command outputs are printed.
 var Verbose bool
 
+// --- Logging Utilities ---
+
+// LogInfo prints a standard informational message.
 func LogInfo(format string, a ...interface{}) {
 	fmt.Printf("INFO: "+format+"\n", a...)
 }
+
+// LogWarning prints a non-fatal warning message.
 func LogWarning(format string, a ...interface{}) {
 	fmt.Printf("WARNING: "+format+"\n", a...)
 }
+
+// LogError prints an error message.
 func LogError(format string, a ...interface{}) {
 	fmt.Printf("ERROR: "+format+"\n", a...)
 }
+
+// LogDebug prints a debug message if the Verbose flag is enabled.
 func LogDebug(format string, a ...interface{}) {
 	if Verbose {
 		fmt.Printf("DEBUG: "+format+"\n", a...)
 	}
 }
 
+// --- System Utilities ---
+
+// AssertRoot ensures the program is running with root privileges, exiting if not.
 func AssertRoot() {
 	if os.Geteuid() != 0 {
 		LogError("This operation requires root privileges")
@@ -32,6 +45,9 @@ func AssertRoot() {
 	}
 }
 
+// RunCommand safely wraps os/exec.
+// If quiet is true and Verbose is false, all output is silenced.
+// If interrupted by context cancellation, it gracefully kills the child process.
 func RunCommand(ctx context.Context, quiet bool, name string, args ...string) (int, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 
@@ -42,6 +58,7 @@ func RunCommand(ctx context.Context, quiet bool, name string, args ...string) (i
 		cmd.Stdout = nil
 		cmd.Stderr = nil
 	} else {
+		// Buffer output to hide it but retain it if needed internally
 		var out bytes.Buffer
 		cmd.Stdout = &out
 		cmd.Stderr = &out
@@ -57,6 +74,8 @@ func RunCommand(ctx context.Context, quiet bool, name string, args ...string) (i
 	return 0, nil
 }
 
+// RebuildInitramfs determines the current Linux distribution and invokes the
+// correct tool to regenerate the initramfs. It respects Context cancellation.
 func RebuildInitramfs(ctx context.Context) error {
 	var command []string
 
@@ -65,6 +84,7 @@ func RebuildInitramfs(ctx context.Context) error {
 		return err == nil
 	}
 
+	// Detect appropriate initramfs builder
 	if fileExists("/ostree") || fileExists("/sysroot/ostree") {
 		fmt.Println("Rebuilding the initramfs with rpm-ostree...")
 		command = []string{"rpm-ostree", "initramfs", "--enable", "--arg=--force"}
@@ -84,8 +104,8 @@ func RebuildInitramfs(ctx context.Context) error {
 		return nil
 	}
 
-	_, err := exec.LookPath("systemd-inhibit")
-	if err == nil {
+	// Wrap with systemd-inhibit to prevent sleep/shutdown during critical build
+	if _, err := exec.LookPath("systemd-inhibit"); err == nil {
 		wrapped := []string{
 			"systemd-inhibit",
 			"--who=envycontrol",
@@ -96,9 +116,10 @@ func RebuildInitramfs(ctx context.Context) error {
 	}
 
 	fmt.Println("Rebuilding the initramfs. DO NOT TURN OFF YOUR COMPUTER...")
+
 	exitCode, err := RunCommand(ctx, !Verbose, command[0], command[1:]...)
 	if err != nil {
-
+		// Identify if the failure was due to user/system interruption
 		if ctx.Err() == context.Canceled {
 			return fmt.Errorf("initramfs rebuild was interrupted by user/system")
 		}
@@ -109,12 +130,17 @@ func RebuildInitramfs(ctx context.Context) error {
 	return nil
 }
 
+// BackupSddmXsetup creates a persistent backup of the original SDDM Xsetup script.
+// It will never overwrite an existing backup, ensuring the vanilla file is protected.
 func BackupSddmXsetup() {
 	bakPath := SddmXsetupPath + ".bak"
 
+	// Skip if original file doesn't exist
 	if _, err := os.Stat(SddmXsetupPath); os.IsNotExist(err) {
 		return
 	}
+
+	// Skip if backup already exists to prevent overwriting with a tampered file
 	if _, err := os.Stat(bakPath); err == nil {
 		return
 	}
@@ -128,6 +154,8 @@ func BackupSddmXsetup() {
 	}
 }
 
+// RestoreSddmXsetup restores the vanilla Xsetup file from the persistent backup,
+// cleaning up the backup file afterward.
 func RestoreSddmXsetup() {
 	bakPath := SddmXsetupPath + ".bak"
 

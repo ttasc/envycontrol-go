@@ -7,6 +7,7 @@ import (
 	"strings"
 )
 
+// CliOptions represents all possible parsed command-line arguments.
 type CliOptions struct {
 	Query            bool
 	Switch           string
@@ -22,6 +23,8 @@ type CliOptions struct {
 	StateQuery       bool
 }
 
+// printHelp outputs the application usage text, preserving the exact wording
+// of the original Python application.
 func printHelp() {
 	helpText := `usage: envycontrol [-h] [-v] [-q] [-s MODE] [--dm DISPLAY_MANAGER] [--force-comp] [--coolbits [VALUE]] [--rtd3 [VALUE]] [--use-nvidia-current] [--reset-sddm] [--reset] [--verbose]
 
@@ -48,6 +51,136 @@ Legacy options:
 	fmt.Print(helpText)
 }
 
+// ParseArgs converts raw command-line arguments into a populated CliOptions struct.
+// It implements a bespoke parser to handle optional values exactly like Python's argparse (nargs='?').
+func ParseArgs(args []string) CliOptions {
+	if len(args) == 1 {
+		printHelp()
+		os.Exit(1)
+	}
+
+	var opts CliOptions
+
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "-h", "--help":
+			printHelp()
+			os.Exit(0)
+
+		case "-v", "--version":
+			fmt.Println(Version)
+			os.Exit(0)
+
+		case "-q", "--query":
+			opts.Query = true
+
+		case "-s", "--switch":
+			val, consumed := parseOptionalString(args, i)
+			if !consumed {
+				LogError("argument -s/--switch: expected one argument")
+				os.Exit(1)
+			}
+			opts.Switch = val
+			i++
+
+		case "--dm":
+			val, consumed := parseOptionalString(args, i)
+			if consumed {
+				opts.Dm = val
+				i++
+			}
+
+		case "--force-comp":
+			opts.ForceComp = true
+
+		case "--coolbits":
+			val := 28 // Default if specified but no value provided
+			parsed, consumed := parseOptionalInt(args, i)
+			if consumed {
+				val = parsed
+				i++
+			}
+			opts.Coolbits = &val
+
+		case "--rtd3":
+			val := 2 // Default if specified but no value provided
+			parsed, consumed := parseOptionalInt(args, i)
+			if consumed {
+				val = parsed
+				i++
+			}
+			opts.Rtd3 = &val
+
+		case "--use-nvidia-current":
+			opts.UseNvidiaCurrent = true
+
+		case "--reset-sddm":
+			opts.ResetSddm = true
+
+		case "--reset":
+			opts.Reset = true
+
+		case "--cache-create":
+			opts.StateCreate = true
+
+		case "--cache-delete":
+			opts.StateDelete = true
+
+		case "--cache-query":
+			opts.StateQuery = true
+
+		case "--verbose":
+			Verbose = true
+
+		default:
+			LogError("unrecognized arguments: %s", arg)
+			os.Exit(1)
+		}
+	}
+
+	validateOptions(&opts)
+	return opts
+}
+
+// --- Helper Functions ---
+
+// parseOptionalString checks if the next argument exists and does not start with a flag indicator ("-").
+func parseOptionalString(args []string, currentIndex int) (string, bool) {
+	if currentIndex+1 < len(args) && !strings.HasPrefix(args[currentIndex+1], "-") {
+		return args[currentIndex+1], true
+	}
+	return "", false
+}
+
+// parseOptionalInt acts like parseOptionalString but parses the result into an integer.
+func parseOptionalInt(args []string, currentIndex int) (int, bool) {
+	if strVal, ok := parseOptionalString(args, currentIndex); ok {
+		if parsedVal, err := strconv.Atoi(strVal); err == nil {
+			return parsedVal, true
+		}
+	}
+	return 0, false
+}
+
+// validateOptions enforces constraints on the user input before returning.
+func validateOptions(opts *CliOptions) {
+	if opts.Switch != "" && !containsStr(SupportedModes, opts.Switch) {
+		LogError("argument -s/--switch: invalid choice: '%s'", opts.Switch)
+		os.Exit(1)
+	}
+
+	if opts.Dm != "" && !containsStr(SupportedDisplayManagers, opts.Dm) {
+		LogError("argument --dm: invalid choice: '%s'", opts.Dm)
+		os.Exit(1)
+	}
+
+	if opts.Rtd3 != nil && !containsInt(Rtd3Modes, *opts.Rtd3) {
+		LogError("argument --rtd3: invalid choice: %d", *opts.Rtd3)
+		os.Exit(1)
+	}
+}
+
 func containsStr(slice []string, val string) bool {
 	for _, item := range slice {
 		if item == val {
@@ -64,92 +197,4 @@ func containsInt(slice []int, val int) bool {
 		}
 	}
 	return false
-}
-
-func ParseArgs(args []string) CliOptions {
-	if len(args) == 1 {
-		printHelp()
-		os.Exit(1)
-	}
-
-	var opts CliOptions
-
-	for i := 1; i < len(args); i++ {
-		arg := args[i]
-		switch arg {
-		case "-h", "--help":
-			printHelp()
-			os.Exit(0)
-		case "-v", "--version":
-			fmt.Println(Version)
-			os.Exit(0)
-		case "-q", "--query":
-			opts.Query = true
-		case "-s", "--switch":
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				opts.Switch = args[i+1]
-				i++
-			} else {
-				LogError("argument -s/--switch: expected one argument")
-				os.Exit(1)
-			}
-		case "--dm":
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				opts.Dm = args[i+1]
-				i++
-			}
-		case "--force-comp":
-			opts.ForceComp = true
-		case "--coolbits":
-			val := 28
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				if parsedVal, err := strconv.Atoi(args[i+1]); err == nil {
-					val = parsedVal
-					i++
-				}
-			}
-			opts.Coolbits = &val
-		case "--rtd3":
-			val := 2
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				if parsedVal, err := strconv.Atoi(args[i+1]); err == nil {
-					val = parsedVal
-					i++
-				}
-			}
-			opts.Rtd3 = &val
-		case "--use-nvidia-current":
-			opts.UseNvidiaCurrent = true
-		case "--reset-sddm":
-			opts.ResetSddm = true
-		case "--reset":
-			opts.Reset = true
-		case "--cache-create":
-			opts.StateCreate = true
-		case "--cache-delete":
-			opts.StateDelete = true
-		case "--cache-query":
-			opts.StateQuery = true
-		case "--verbose":
-			Verbose = true
-		default:
-			LogError("unrecognized arguments: %s", arg)
-			os.Exit(1)
-		}
-	}
-
-	if opts.Switch != "" && !containsStr(SupportedModes, opts.Switch) {
-		LogError("argument -s/--switch: invalid choice: '%s'", opts.Switch)
-		os.Exit(1)
-	}
-	if opts.Dm != "" && !containsStr(SupportedDisplayManagers, opts.Dm) {
-		LogError("argument --dm: invalid choice: '%s'", opts.Dm)
-		os.Exit(1)
-	}
-	if opts.Rtd3 != nil && !containsInt(Rtd3Modes, *opts.Rtd3) {
-		LogError("argument --rtd3: invalid choice: %d", *opts.Rtd3)
-		os.Exit(1)
-	}
-
-	return opts
 }
