@@ -1,49 +1,42 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 )
 
-// Hàm hỗ trợ khóa tín hiệu ngắt để bảo vệ Critical Section
-func protectCriticalSection() chan os.Signal {
-	sigChan := make(chan os.Signal, 1)
-	// Bắt SIGINT (Ctrl+C) và SIGTERM (Lệnh kill)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	return sigChan
-}
-
 // SwitchMode là luồng điều phối chính để chuyển mode
 func SwitchMode(targetMode string, opts SwitchOptions) {
 	fmt.Printf("Switching to %s mode\n", targetMode)
 
-	// 1. Tải trạng thái hiện tại (Đọc Source of Truth)
 	state := LoadState()
 
 	if targetMode == "integrated" || targetMode == "hybrid" {
-		RestoreSddmXsetup() // Dọn dẹp sạch sẽ nếu không xài Nvidia
+		RestoreSddmXsetup()
 	} else if targetMode == "nvidia" {
 		dm := opts.DisplayManager
 		if dm == "" {
 			dm = ProbeDisplayManager()
 		}
 		if dm == "sddm" {
-			BackupSddmXsetup() // Chốt hạ bản backup trước khi Transaction ghi đè
+			BackupSddmXsetup()
 		}
 	}
 
-	// 2. Bật/Tắt systemd service nvidia-persistenced
+	// Lệnh systemctl chạy nhanh nên không cần ngắt, dùng Background Context
+	ctxBg := context.Background()
 	if targetMode == "integrated" {
-		exitCode, _ := RunCommand(!Verbose, "systemctl", "disable", "nvidia-persistenced.service")
+		exitCode, _ := RunCommand(ctxBg, !Verbose, "systemctl", "disable", "nvidia-persistenced.service")
 		if exitCode == 0 {
 			fmt.Println("Successfully disabled nvidia-persistenced.service")
 		} else {
 			LogError("An error occurred while disabling nvidia-persistenced.service")
 		}
 	} else {
-		exitCode, _ := RunCommand(!Verbose, "systemctl", "enable", "nvidia-persistenced.service")
+		exitCode, _ := RunCommand(ctxBg, !Verbose, "systemctl", "enable", "nvidia-persistenced.service")
 		if exitCode == 0 {
 			fmt.Println("Successfully enabled nvidia-persistenced.service")
 		} else {
@@ -51,49 +44,38 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		}
 	}
 
-	// 3. Gọi Pure Builder tính toán Kế hoạch (Bản thiết kế)
 	plan, err := BuildTransactionPlan(targetMode, state, opts)
 	if err != nil {
 		LogError("Failed to build transaction plan: %v", err)
 		os.Exit(1)
 	}
 
-	// [BẢO VỆ BẰNG SIGNAL]: Thiết lập lá chắn ngắt
-	sigChan := protectCriticalSection()
-	go func() {
-		<-sigChan
-		LogError("\n[CRITICAL] Interrupted by user or system!")
-		LogError("Triggering Emergency Rollback to prevent system brick...")
-		RollbackTransaction()
-		os.Exit(1) // Chỉ exit SAU KHI đã rollback xong
-	}()
+	// [CƠ CHẾ BẢO VỆ CONTEXT]: Tạo lá chắn ngắt toàn cục
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
-	// 4. Bàn giao bản thiết kế cho Transaction Engine (An toàn tuyệt đối)
-	if err := ExecuteTransaction(plan); err != nil {
+	createdFiles, err := ExecuteTransaction(plan)
+	if err != nil {
 		LogError("Transaction aborted: %v", err)
 		os.Exit(1)
 	}
 
-	// 5. Build lại Initramfs để áp dụng
-	if err := RebuildInitramfs(); err != nil {
-		LogError("Initramfs build failed: %v", err)
+	// Truyền Context vào Initramfs. Nếu bị ngắt, tiến trình con sẽ bị Kill tức khắc.
+	if err := RebuildInitramfs(ctx); err != nil {
+		LogError("Initramfs build failed or was interrupted: %v", err)
 		LogError("Triggering Emergency Rollback...")
 
-		if rbErr := RollbackTransaction(); rbErr != nil {
+		if rbErr := RollbackTransaction(createdFiles); rbErr != nil {
 			LogError("CRITICAL: Rollback failed: %v", rbErr)
 		} else {
 			LogWarning("System configs safely rolled back.")
 			LogWarning("Attempting to rebuild initramfs for the rolled-back state...")
-			// Best-effort để đồng bộ lại initramfs với file config vừa được cứu
-			RebuildInitramfs()
+			// Phục hồi Initramfs bắt buộc dùng Background Context (vì cái cũ đã bị Canceled)
+			RebuildInitramfs(context.Background())
 		}
 		os.Exit(1)
 	}
 
-	// Gỡ bỏ lá chắn an toàn khi đã hoàn tất
-	signal.Stop(sigChan)
-
-	// 6. Cập nhật State File SAU KHI mọi thứ đã thành công
 	state.CurrentMode = targetMode
 	if err := SaveState(state); err != nil {
 		LogWarning("Mode switched successfully, but failed to save state file: %v", err)
@@ -109,7 +91,6 @@ func ResetSystem() {
 
 	RestoreSddmXsetup()
 
-	// Dùng Transaction rỗng ToCreate để dọn dẹp an toàn có backup
 	plan := TransactionPlan{
 		ToRemove: []string{
 			BlacklistPath, UdevIntegratedPath, UdevPmPath,
@@ -122,38 +103,30 @@ func ResetSystem() {
 		ToCreate: []FileConfig{},
 	}
 
-	// [BẢO VỆ BẰNG SIGNAL]
-	sigChan := protectCriticalSection()
-	go func() {
-		<-sigChan
-		LogError("\n[CRITICAL] Interrupted by user or system!")
-		LogError("Triggering Emergency Rollback to prevent system brick...")
-		RollbackTransaction()
-		os.Exit(1)
-	}()
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
-	if err := ExecuteTransaction(plan); err != nil {
+	createdFiles, err := ExecuteTransaction(plan)
+	if err != nil {
 		LogError("Reset transaction failed: %v", err)
 		os.Exit(1)
 	}
 
 	os.Remove(StateFilePath)
 
-	if err := RebuildInitramfs(); err != nil {
-		LogError("Initramfs rebuild failed during reset: %v", err)
+	if err := RebuildInitramfs(ctx); err != nil {
+		LogError("Initramfs rebuild failed or was interrupted: %v", err)
 		LogError("Triggering Emergency Rollback...")
 
-		if rbErr := RollbackTransaction(); rbErr != nil {
+		if rbErr := RollbackTransaction(createdFiles); rbErr != nil {
 			LogError("CRITICAL: Rollback failed: %v", rbErr)
 		} else {
 			LogWarning("System configs safely rolled back.")
 			LogWarning("Attempting to rebuild initramfs for the rolled-back state...")
-			RebuildInitramfs()
+			RebuildInitramfs(context.Background())
 		}
 		os.Exit(1)
 	}
-
-	signal.Stop(sigChan)
 
 	fmt.Println("Operation completed successfully")
 }
@@ -166,22 +139,20 @@ func ResetSddm() {
 		ToCreate: []FileConfig{{Path: SddmXsetupPath, Content: SddmXsetupContent, Executable: true}},
 	}
 
-	// [BẢO VỆ BẰNG SIGNAL]: Mặc dù không gọi initramfs nhưng File I/O vẫn cần an toàn
-	sigChan := protectCriticalSection()
-	go func() {
-		<-sigChan
-		LogError("\n[CRITICAL] Interrupted by user or system!")
-		LogError("Triggering Emergency Rollback...")
-		RollbackTransaction()
-		os.Exit(1)
-	}()
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
-	if err := ExecuteTransaction(plan); err != nil {
-		LogError("Reset SDDM failed: %v", err)
+	// Dù không chạy initramfs, I/O của SDDM vẫn cần an toàn
+	_, err := ExecuteTransaction(plan)
+	if err != nil {
+		// Dùng ctx để kiểm tra xem lỗi là do đĩa cứng hay do người dùng ngắt
+		if ctx.Err() == context.Canceled {
+			LogError("Reset SDDM was interrupted by user.")
+		} else {
+			LogError("Reset SDDM failed: %v", err)
+		}
 		os.Exit(1)
 	}
-
-	signal.Stop(sigChan)
 
 	fmt.Println("Operation completed successfully")
 }

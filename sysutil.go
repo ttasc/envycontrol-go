@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,9 +34,9 @@ func AssertRoot() {
 	}
 }
 
-// RunCommand bọc os/exec an toàn
-func RunCommand(quiet bool, name string, args ...string) (int, error) {
-	cmd := exec.Command(name, args...)
+// RunCommand bọc os/exec an toàn, hỗ trợ ngắt tiến trình bằng Context
+func RunCommand(ctx context.Context, quiet bool, name string, args ...string) (int, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
 
 	if Verbose && !quiet {
 		cmd.Stdout = os.Stdout
@@ -59,8 +60,8 @@ func RunCommand(quiet bool, name string, args ...string) (int, error) {
 	return 0, nil
 }
 
-// Lệnh build initramfs trả về error để kích hoạt Rollback nếu thất bại
-func RebuildInitramfs() error {
+// Lệnh build initramfs. Bắt lỗi Context Canceled nếu bị user ngắt.
+func RebuildInitramfs(ctx context.Context) error {
 	var command []string
 
 	fileExists := func(p string) bool {
@@ -99,8 +100,12 @@ func RebuildInitramfs() error {
 	}
 
 	fmt.Println("Rebuilding the initramfs. DO NOT TURN OFF YOUR COMPUTER...")
-	exitCode, err := RunCommand(!Verbose, command[0], command[1:]...)
-	if exitCode != 0 || err != nil {
+	exitCode, err := RunCommand(ctx, !Verbose, command[0], command[1:]...)
+	if err != nil {
+		// Nhận diện lỗi do Signal Interruption
+		if ctx.Err() == context.Canceled {
+			return fmt.Errorf("initramfs rebuild was interrupted by user/system")
+		}
 		return fmt.Errorf("initramfs command failed with exit code %d: %v", exitCode, err)
 	}
 
@@ -108,16 +113,13 @@ func RebuildInitramfs() error {
 	return nil
 }
 
-// BackupSddmXsetup tạo bản sao lưu vĩnh viễn (persistent) cho Xsetup của SDDM.
-// Tuân thủ POSIX: Giữ nguyên file gốc, chỉ đọc và copy.
+// BackupSddmXsetup tạo bản sao lưu vĩnh viễn cho Xsetup của SDDM.
 func BackupSddmXsetup() {
 	bakPath := SddmXsetupPath + ".bak"
 
-	// 1. File gốc không tồn tại -> Bỏ qua
 	if _, err := os.Stat(SddmXsetupPath); os.IsNotExist(err) {
 		return
 	}
-	// 2. Đã có file .bak từ trước -> KHÔNG ghi đè (bảo vệ bản backup gốc)
 	if _, err := os.Stat(bakPath); err == nil {
 		return
 	}
@@ -135,7 +137,6 @@ func BackupSddmXsetup() {
 func RestoreSddmXsetup() {
 	bakPath := SddmXsetupPath + ".bak"
 
-	// Nếu không có backup -> Bỏ qua
 	if _, err := os.Stat(bakPath); os.IsNotExist(err) {
 		return
 	}

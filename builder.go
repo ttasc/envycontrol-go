@@ -48,7 +48,7 @@ func BuildTransactionPlan(targetMode string, state SystemState, opts SwitchOptio
 	case "nvidia":
 		// Điều kiện tiên quyết: Phải có PCI ID để cấu hình Xorg Server
 		if state.NvidiaGpuPciBus == "" {
-			return plan, fmt.Errorf("missing Nvidia PCI Bus ID in state. Please switch to hybrid mode first")
+			return plan, fmt.Errorf("Nvidia PCI Bus ID not found. Your GPU is physically powered off (Integrated mode). Please switch to 'hybrid' mode first to wake it up, then reboot and try again")
 		}
 
 		// Xorg Base Config

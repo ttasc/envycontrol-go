@@ -9,18 +9,20 @@ import (
 	"path/filepath"
 )
 
-// ExecuteTransaction thực thi "Bản kế hoạch" một cách an toàn
-func ExecuteTransaction(plan TransactionPlan) error {
+// ExecuteTransaction thực thi kế hoạch an toàn. Trả về mảng lưu vết các file vừa tạo.
+func ExecuteTransaction(plan TransactionPlan) ([]string, error) {
 	LogDebug("Preparing to execute filesystem transaction...")
 
-	// 1. Tạo Backup trước khi làm bất kỳ điều gì
+	var createdFiles []string
+
+	// 1. Tạo Backup các file đã tồn tại trên máy
 	err := createBackup(plan)
 	if err != nil {
-		return fmt.Errorf("failed to create backup, aborting transaction: %v", err)
+		return nil, fmt.Errorf("failed to create backup, aborting transaction: %v", err)
 	}
 	LogInfo("Created safety backup at %s", BackupFilePath)
 
-	// 2. Thực hiện Xóa file rác
+	// 2. Xóa file rác
 	for _, path := range plan.ToRemove {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			LogWarning("Failed to remove legacy file %s: %v", path, err)
@@ -29,24 +31,26 @@ func ExecuteTransaction(plan TransactionPlan) error {
 		}
 	}
 
-	// 3. Thực hiện Ghi file mới
+	// 3. Ghi file mới (Atomic)
 	for _, fileConf := range plan.ToCreate {
 		err := atomicWrite(fileConf)
 		if err != nil {
-			// [FAIL-FAST]: Lỗi ghi đĩa -> Lập tức tự cứu lấy hệ thống
+			// Fail-Fast: Lỗi đĩa -> Lập tức tự cứu lấy hệ thống với danh sách file đã sinh ra
 			LogError("Filesystem error during transaction: %v", err)
 			LogError("Triggering Emergency Rollback...")
-			if rbErr := RollbackTransaction(); rbErr != nil {
-				return fmt.Errorf("CRITICAL: transaction failed AND rollback failed: %v", rbErr)
+			if rbErr := RollbackTransaction(createdFiles); rbErr != nil {
+				return createdFiles, fmt.Errorf("CRITICAL: transaction failed AND rollback failed: %v", rbErr)
 			}
-			return fmt.Errorf("transaction failed but system was safely rolled back")
+			return createdFiles, fmt.Errorf("transaction failed but system was safely rolled back")
 		}
+		// Đưa vào mảng lưu vết
+		createdFiles = append(createdFiles, fileConf.Path)
 	}
 
-	return nil
+	return createdFiles, nil
 }
 
-// atomicWrite ghi dữ liệu ra file tạm rồi rename để đảm bảo tính Nguyên tử (POSIX)
+// atomicWrite sử dụng file .tmp và System call Rename để đảm bảo tính nguyên tử (POSIX)
 func atomicWrite(conf FileConfig) error {
 	dir := filepath.Dir(conf.Path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -60,22 +64,17 @@ func atomicWrite(conf FileConfig) error {
 
 	tmpPath := conf.Path + ".tmp"
 
-	// 1. Ghi vào file tạm
 	if err := os.WriteFile(tmpPath, []byte(conf.Content), mode); err != nil {
 		return err
 	}
-
-	// Dọn dẹp file tạm nếu hàm thất bại giữa chừng
 	defer os.Remove(tmpPath)
 
-	// 2. Chmod file tạm
 	if conf.Executable {
 		if err := os.Chmod(tmpPath, 0755); err != nil {
 			return fmt.Errorf("chmod +x failed for %s: %v", tmpPath, err)
 		}
 	}
 
-	// 3. Rename atomic đè lên file chính (System Call Rename)
 	if err := os.Rename(tmpPath, conf.Path); err != nil {
 		return fmt.Errorf("atomic rename failed %s -> %s: %v", tmpPath, conf.Path, err)
 	}
@@ -84,25 +83,15 @@ func atomicWrite(conf FileConfig) error {
 	return nil
 }
 
-// createBackup duyệt qua danh sách các file mà tool chuẩn bị can thiệp,
-// nếu file nào đang tồn tại trên đĩa cứng, nhét nó vào file backup.tar.gz
+// createBackup gom các file sẽ bị ảnh hưởng vào archive nén
 func createBackup(plan TransactionPlan) error {
-	// Gộp tất cả đường dẫn (cần xóa + cần ghi đè) thành một tập hợp duy nhất
 	pathsToBackup := make(map[string]bool)
-	for _, p := range plan.ToRemove {
-		pathsToBackup[p] = true
-	}
-	for _, p := range plan.ToCreate {
-		pathsToBackup[p.Path] = true
-	}
+	for _, p := range plan.ToRemove { pathsToBackup[p] = true }
+	for _, p := range plan.ToCreate { pathsToBackup[p.Path] = true }
 
-	// Tạo thư mục /var/lib/envycontrol nếu chưa có
 	os.MkdirAll(filepath.Dir(BackupFilePath), 0755)
-
 	backupFile, err := os.Create(BackupFilePath)
-	if err != nil {
-		return err
-	}
+	if err != nil { return err }
 	defer backupFile.Close()
 
 	gw := gzip.NewWriter(backupFile)
@@ -113,27 +102,18 @@ func createBackup(plan TransactionPlan) error {
 
 	for path := range pathsToBackup {
 		info, err := os.Stat(path)
-		if err == nil && !info.IsDir() { // File có tồn tại
+		if err == nil && !info.IsDir() {
 			header, err := tar.FileInfoHeader(info, info.Name())
-			if err != nil {
-				return err
-			}
-			// Header tar lưu đường dẫn tuyệt đối bỏ đi dấu '/' ở đầu
+			if err != nil { return err }
 			header.Name = path
 
-			if err := tw.WriteHeader(header); err != nil {
-				return err
-			}
+			if err := tw.WriteHeader(header); err != nil { return err }
 
 			file, err := os.Open(path)
-			if err != nil {
-				return err
-			}
+			if err != nil { return err }
 			_, err = io.Copy(tw, file)
 			file.Close()
-			if err != nil {
-				return err
-			}
+			if err != nil { return err }
 			LogDebug("Backed up %s", path)
 		}
 	}
@@ -141,48 +121,44 @@ func createBackup(plan TransactionPlan) error {
 	return nil
 }
 
-// RollbackTransaction giải nén backup.tar.gz đè ngược lại vào hệ thống (Cứu hộ)
-func RollbackTransaction() error {
+// RollbackTransaction xóa các file rác mới sinh ra, sau đó giải nén backup đè lại hệ thống
+func RollbackTransaction(createdFiles []string) error {
+	LogInfo("Starting rollback process...")
+
+	// 1. Dọn dẹp Orphaned Files
+	for _, f := range createdFiles {
+		if err := os.Remove(f); err == nil {
+			LogDebug("Rollback: Removed orphaned file %s", f)
+		}
+	}
+
+	// 2. Phục hồi từ Archive
 	if _, err := os.Stat(BackupFilePath); os.IsNotExist(err) {
 		return fmt.Errorf("no backup found at %s", BackupFilePath)
 	}
 
 	backupFile, err := os.Open(BackupFilePath)
-	if err != nil {
-		return err
-	}
+	if err != nil { return err }
 	defer backupFile.Close()
 
 	gr, err := gzip.NewReader(backupFile)
-	if err != nil {
-		return err
-	}
+	if err != nil { return err }
 	defer gr.Close()
 
 	tr := tar.NewReader(gr)
 
 	for {
 		header, err := tr.Next()
-		if err == io.EOF {
-			break // Hết file nén
-		}
-		if err != nil {
-			return err
-		}
+		if err == io.EOF { break }
+		if err != nil { return err }
 
-		// Đường dẫn gốc lúc nén là absolute path
 		targetPath := header.Name
-		if targetPath == "" {
-			continue
-		}
+		if targetPath == "" { continue }
 
-		// Tạo lại thư mục cha nếu lỡ tay bị xóa
 		os.MkdirAll(filepath.Dir(targetPath), 0755)
 
 		file, err := os.OpenFile(targetPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(header.Mode))
-		if err != nil {
-			return err
-		}
+		if err != nil { return err }
 
 		if _, err := io.Copy(file, tr); err != nil {
 			file.Close()

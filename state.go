@@ -39,14 +39,24 @@ func RebuildState() SystemState {
 }
 
 // SaveState lưu trữ SystemState xuống đĩa an toàn
-func SaveState(state SystemState) error {
+// Lưu ý: Đọc file cũ lên trước, nếu file cũ có PCI ID mà state mới bị rỗng, hãy giữ lại ID cũ
+func SaveState(newState SystemState) error {
 	dir := filepath.Dir(StateFilePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
-	// Format JSON đẹp, thụt đầu dòng (Indent)
-	data, err := json.MarshalIndent(state, "", "    ")
+	// Đọc state cũ để merge
+	if content, err := os.ReadFile(StateFilePath); err == nil {
+		var oldState SystemState
+		if json.Unmarshal(content, &oldState) == nil {
+			if newState.NvidiaGpuPciBus == "" && oldState.NvidiaGpuPciBus != "" {
+				newState.NvidiaGpuPciBus = oldState.NvidiaGpuPciBus
+			}
+		}
+	}
+
+	data, err := json.MarshalIndent(newState, "", "    ")
 	if err != nil {
 		return err
 	}
