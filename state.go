@@ -25,7 +25,7 @@ func LoadState() SystemState {
 // RebuildState quét hệ thống thực tế để tái tạo SystemState
 func RebuildState() SystemState {
 	state := SystemState{
-		CurrentMode: guessCurrentMode(),
+		CurrentMode: GuessCurrentMode(),
 		IgpuVendor:  ProbeIgpuVendor(),
 	}
 
@@ -54,8 +54,8 @@ func SaveState(state SystemState) error {
 	return os.WriteFile(StateFilePath, data, 0644)
 }
 
-// guessCurrentMode (Heuristic) kiểm tra file trên đĩa cứng như cách cũ
-func guessCurrentMode() string {
+// GuessCurrentMode (Heuristic) kiểm tra file trên đĩa cứng như cách cũ
+func GuessCurrentMode() string {
 	fileExists := func(p string) bool {
 		_, err := os.Stat(p)
 		return err == nil

@@ -10,8 +10,8 @@ func main() {
 
 	// --- 1. Nhóm hành động Chỉ Đọc (Query) ---
 	if opts.Query {
-		state := LoadState()
-		fmt.Println(state.CurrentMode)
+		liveMode := GuessCurrentMode()
+		fmt.Println(liveMode)
 		return
 	}
 	if opts.StateQuery {

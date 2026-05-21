@@ -3,7 +3,17 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 )
+
+// Hàm hỗ trợ khóa tín hiệu ngắt để bảo vệ Critical Section
+func protectCriticalSection() chan os.Signal {
+	sigChan := make(chan os.Signal, 1)
+	// Bắt SIGINT (Ctrl+C) và SIGTERM (Lệnh kill)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	return sigChan
+}
 
 // SwitchMode là luồng điều phối chính để chuyển mode
 func SwitchMode(targetMode string, opts SwitchOptions) {
@@ -48,6 +58,16 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		os.Exit(1)
 	}
 
+	// [BẢO VỆ BẰNG SIGNAL]: Thiết lập lá chắn ngắt
+	sigChan := protectCriticalSection()
+	go func() {
+		<-sigChan
+		LogError("\n[CRITICAL] Interrupted by user or system!")
+		LogError("Triggering Emergency Rollback to prevent system brick...")
+		RollbackTransaction()
+		os.Exit(1) // Chỉ exit SAU KHI đã rollback xong
+	}()
+
 	// 4. Bàn giao bản thiết kế cho Transaction Engine (An toàn tuyệt đối)
 	if err := ExecuteTransaction(plan); err != nil {
 		LogError("Transaction aborted: %v", err)
@@ -69,6 +89,9 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		}
 		os.Exit(1)
 	}
+
+	// Gỡ bỏ lá chắn an toàn khi đã hoàn tất
+	signal.Stop(sigChan)
 
 	// 6. Cập nhật State File SAU KHI mọi thứ đã thành công
 	state.CurrentMode = targetMode
@@ -99,6 +122,16 @@ func ResetSystem() {
 		ToCreate: []FileConfig{},
 	}
 
+	// [BẢO VỆ BẰNG SIGNAL]
+	sigChan := protectCriticalSection()
+	go func() {
+		<-sigChan
+		LogError("\n[CRITICAL] Interrupted by user or system!")
+		LogError("Triggering Emergency Rollback to prevent system brick...")
+		RollbackTransaction()
+		os.Exit(1)
+	}()
+
 	if err := ExecuteTransaction(plan); err != nil {
 		LogError("Reset transaction failed: %v", err)
 		os.Exit(1)
@@ -108,10 +141,20 @@ func ResetSystem() {
 
 	if err := RebuildInitramfs(); err != nil {
 		LogError("Initramfs rebuild failed during reset: %v", err)
-		LogError("Triggering rollback...")
-		RollbackTransaction()
+		LogError("Triggering Emergency Rollback...")
+
+		if rbErr := RollbackTransaction(); rbErr != nil {
+			LogError("CRITICAL: Rollback failed: %v", rbErr)
+		} else {
+			LogWarning("System configs safely rolled back.")
+			LogWarning("Attempting to rebuild initramfs for the rolled-back state...")
+			RebuildInitramfs()
+		}
 		os.Exit(1)
 	}
+
+	signal.Stop(sigChan)
+
 	fmt.Println("Operation completed successfully")
 }
 
@@ -122,9 +165,23 @@ func ResetSddm() {
 		ToRemove: []string{},
 		ToCreate: []FileConfig{{Path: SddmXsetupPath, Content: SddmXsetupContent, Executable: true}},
 	}
+
+	// [BẢO VỆ BẰNG SIGNAL]: Mặc dù không gọi initramfs nhưng File I/O vẫn cần an toàn
+	sigChan := protectCriticalSection()
+	go func() {
+		<-sigChan
+		LogError("\n[CRITICAL] Interrupted by user or system!")
+		LogError("Triggering Emergency Rollback...")
+		RollbackTransaction()
+		os.Exit(1)
+	}()
+
 	if err := ExecuteTransaction(plan); err != nil {
 		LogError("Reset SDDM failed: %v", err)
 		os.Exit(1)
 	}
+
+	signal.Stop(sigChan)
+
 	fmt.Println("Operation completed successfully")
 }

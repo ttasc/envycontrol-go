@@ -46,7 +46,7 @@ func ExecuteTransaction(plan TransactionPlan) error {
 	return nil
 }
 
-// Hàm ghi file con (bao gồm tự tạo thư mục và chmod)
+// atomicWrite ghi dữ liệu ra file tạm rồi rename để đảm bảo tính Nguyên tử (POSIX)
 func atomicWrite(conf FileConfig) error {
 	dir := filepath.Dir(conf.Path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -58,14 +58,26 @@ func atomicWrite(conf FileConfig) error {
 		mode = 0755
 	}
 
-	if err := os.WriteFile(conf.Path, []byte(conf.Content), mode); err != nil {
+	tmpPath := conf.Path + ".tmp"
+
+	// 1. Ghi vào file tạm
+	if err := os.WriteFile(tmpPath, []byte(conf.Content), mode); err != nil {
 		return err
 	}
 
+	// Dọn dẹp file tạm nếu hàm thất bại giữa chừng
+	defer os.Remove(tmpPath)
+
+	// 2. Chmod file tạm
 	if conf.Executable {
-		if err := os.Chmod(conf.Path, 0755); err != nil {
-			return fmt.Errorf("chmod +x failed for %s", conf.Path)
+		if err := os.Chmod(tmpPath, 0755); err != nil {
+			return fmt.Errorf("chmod +x failed for %s: %v", tmpPath, err)
 		}
+	}
+
+	// 3. Rename atomic đè lên file chính (System Call Rename)
+	if err := os.Rename(tmpPath, conf.Path); err != nil {
+		return fmt.Errorf("atomic rename failed %s -> %s: %v", tmpPath, conf.Path, err)
 	}
 
 	LogInfo("Created file %s", conf.Path)

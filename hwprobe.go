@@ -85,7 +85,10 @@ func ProbeDisplayManager() string {
 	match := re.FindStringSubmatch(string(content))
 
 	if len(match) > 1 {
-		return filepath.Base(strings.TrimSpace(match[1]))
+		parts := strings.Fields(match[1])
+		if len(parts) > 0 {
+			return filepath.Base(parts[0]) // Chỉ lấy "sddm"
+		}
 	}
 	return ""
 }
