@@ -12,6 +12,18 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 	// 1. Tải trạng thái hiện tại (Đọc Source of Truth)
 	state := LoadState()
 
+	if targetMode == "integrated" || targetMode == "hybrid" {
+		RestoreSddmXsetup() // Dọn dẹp sạch sẽ nếu không xài Nvidia
+	} else if targetMode == "nvidia" {
+		dm := opts.DisplayManager
+		if dm == "" {
+			dm = ProbeDisplayManager()
+		}
+		if dm == "sddm" {
+			BackupSddmXsetup() // Chốt hạ bản backup trước khi Transaction ghi đè
+		}
+	}
+
 	// 2. Bật/Tắt systemd service nvidia-persistenced
 	if targetMode == "integrated" {
 		exitCode, _ := RunCommand(!Verbose, "systemctl", "disable", "nvidia-persistenced.service")
@@ -71,6 +83,8 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 // ResetSystem khôi phục hệ thống về trạng thái ban đầu của Distro
 func ResetSystem() {
 	fmt.Println("Reverting changes made by EnvyControl...")
+
+	RestoreSddmXsetup()
 
 	// Dùng Transaction rỗng ToCreate để dọn dẹp an toàn có backup
 	plan := TransactionPlan{

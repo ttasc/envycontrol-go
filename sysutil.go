@@ -82,7 +82,9 @@ func RebuildInitramfs() error {
 	} else if fileExists("/etc/arch-release") {
 		command = []string{"mkinitcpio", "-P"}
 	} else {
-		return fmt.Errorf("unsupported distribution: could not determine initramfs builder")
+		LogWarning("Unsupported distribution: could not determine initramfs builder.")
+		LogWarning("Skipping initramfs rebuild. You may need to update your boot image manually.")
+		return nil
 	}
 
 	_, err := exec.LookPath("systemd-inhibit")
@@ -104,4 +106,46 @@ func RebuildInitramfs() error {
 
 	fmt.Println("Successfully rebuilt the initramfs!")
 	return nil
+}
+
+// BackupSddmXsetup tạo bản sao lưu vĩnh viễn (persistent) cho Xsetup của SDDM.
+// Tuân thủ POSIX: Giữ nguyên file gốc, chỉ đọc và copy.
+func BackupSddmXsetup() {
+	bakPath := SddmXsetupPath + ".bak"
+
+	// 1. File gốc không tồn tại -> Bỏ qua
+	if _, err := os.Stat(SddmXsetupPath); os.IsNotExist(err) {
+		return
+	}
+	// 2. Đã có file .bak từ trước -> KHÔNG ghi đè (bảo vệ bản backup gốc)
+	if _, err := os.Stat(bakPath); err == nil {
+		return
+	}
+
+	if content, err := os.ReadFile(SddmXsetupPath); err == nil {
+		if err := os.WriteFile(bakPath, content, 0755); err == nil {
+			LogDebug("Created persistent backup for SDDM Xsetup at %s", bakPath)
+		} else {
+			LogWarning("Failed to create SDDM backup: %v", err)
+		}
+	}
+}
+
+// RestoreSddmXsetup khôi phục file Xsetup gốc và dọn dẹp file .bak
+func RestoreSddmXsetup() {
+	bakPath := SddmXsetupPath + ".bak"
+
+	// Nếu không có backup -> Bỏ qua
+	if _, err := os.Stat(bakPath); os.IsNotExist(err) {
+		return
+	}
+
+	if content, err := os.ReadFile(bakPath); err == nil {
+		if err := os.WriteFile(SddmXsetupPath, content, 0755); err == nil {
+			os.Remove(bakPath)
+			LogInfo("Restored original SDDM Xsetup file")
+		} else {
+			LogError("Failed to restore SDDM Xsetup file: %v", err)
+		}
+	}
 }
