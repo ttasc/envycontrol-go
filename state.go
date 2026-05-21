@@ -2,130 +2,74 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 )
 
-// CacheData biểu diễn cấu trúc JSON của file cache
-type CacheData struct {
-	NvidiaGpuPciBus string `json:"nvidia_gpu_pci_bus"`
-}
-
-// Kiểm tra xem một file có tồn tại hay không
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-// Xác định mode đồ họa hiện tại bằng heuristic (kiểm tra sự tồn tại của file config)
-func GetCurrentMode() string {
-	mode := "hybrid" // Default
-
-	blacklistExists := fileExists(BlacklistPath)
-	udevIntegratedExists := fileExists(UdevIntegratedPath)
-	oldUdevExists := fileExists("/lib/udev/rules.d/50-remove-nvidia.rules")
-	xorgExists := fileExists(XorgPath)
-	modesetExists := fileExists(ModesetPath)
-
-	if blacklistExists && (udevIntegratedExists || oldUdevExists) {
-		mode = "integrated"
-	} else if xorgExists && modesetExists {
-		mode = "nvidia"
+// LoadState đọc thông tin từ file State. Nếu file bị mất, tự động xây dựng lại từ hệ thống.
+func LoadState() SystemState {
+	if _, err := os.Stat(StateFilePath); err == nil {
+		content, err := os.ReadFile(StateFilePath)
+		if err == nil {
+			var state SystemState
+			if err := json.Unmarshal(content, &state); err == nil {
+				return state // Trả về nếu đọc thành công
+			}
+		}
 	}
 
-	return mode
+	// Fallback: Đoán trạng thái và lấy thông tin phần cứng nếu chưa có State File
+	return RebuildState()
 }
 
-// Ghi chuỗi JSON xuống file cache
-func writeCacheFile(pciBus string) {
-	dir := filepath.Dir(CacheFilePath)
+// RebuildState quét hệ thống thực tế để tái tạo SystemState
+func RebuildState() SystemState {
+	state := SystemState{
+		CurrentMode: guessCurrentMode(),
+		IgpuVendor:  ProbeIgpuVendor(),
+	}
+
+	// Chỉ lấy được PCI ID thực tế khi card đồ họa Nvidia đang được bật
+	if state.CurrentMode != "integrated" {
+		if pci, err := ProbeNvidiaPciBus(); err == nil {
+			state.NvidiaGpuPciBus = pci
+		}
+	}
+	return state
+}
+
+// SaveState lưu trữ SystemState xuống đĩa an toàn
+func SaveState(state SystemState) error {
+	dir := filepath.Dir(StateFilePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		LogError("Failed to create cache directory: %v", err)
-		return
+		return err
 	}
 
-	data := CacheData{
-		NvidiaGpuPciBus: pciBus,
-	}
-
-	// Marshal với Indent để JSON đẹp như Python làm (indent=4)
-	file, _ := json.MarshalIndent(data, "", "    ")
-
-	err := os.WriteFile(CacheFilePath, file, 0644)
+	// Format JSON đẹp, thụt đầu dòng (Indent)
+	data, err := json.MarshalIndent(state, "", "    ")
 	if err != nil {
-		LogError("Failed to write cache file: %v", err)
-		return
+		return err
 	}
 
-	LogDebug("Created file %s", CacheFilePath)
+	return os.WriteFile(StateFilePath, data, 0644)
 }
 
-// --- Các hàm CLI Action về Cache ---
-
-// Tương đương với --cache-create
-func CreateCache() {
-	if GetCurrentMode() != "hybrid" {
-		LogError("--cache-create requires that the system be in the hybrid Optimus mode")
-		os.Exit(1) // Tái tạo lại ValueError của Python
+// guessCurrentMode (Heuristic) kiểm tra file trên đĩa cứng như cách cũ
+func guessCurrentMode() string {
+	fileExists := func(p string) bool {
+		_, err := os.Stat(p)
+		return err == nil
 	}
 
-	pciBus := GetNvidiaGpuPciBus()
-	writeCacheFile(pciBus)
-}
+	blacklist := fileExists(BlacklistPath)
+	udevInteg := fileExists(UdevIntegratedPath) || fileExists("/lib/udev/rules.d/50-remove-nvidia.rules")
+	xorg := fileExists(XorgPath)
+	modeset := fileExists(ModesetPath)
 
-// Tương đương với --cache-delete
-func DeleteCache() {
-	os.Remove(CacheFilePath)
-	// Xóa luôn thư mục cha nếu trống (giống os.removedirs của Python)
-	os.Remove(filepath.Dir(CacheFilePath))
-	LogDebug("Removed file %s", CacheFilePath)
-}
-
-// Tương đương với --cache-query
-func ShowCache() {
-	if fileExists(CacheFilePath) {
-		content, _ := os.ReadFile(CacheFilePath)
-		fmt.Print(string(content))
-	} else {
-		fmt.Printf("ERROR: Could not read %s\n", CacheFilePath)
+	if blacklist && udevInteg {
+		return "integrated"
+	} else if xorg && modeset {
+		return "nvidia"
 	}
-}
-
-// Hàm này thay thế ContextManager "adapter()" của bản Python
-// Nó sẽ được gọi trước khi bắt đầu thực hiện Switch mode
-func SetupCacheAdapter() {
-	// Nếu hệ thống đang ở Hybrid mode -> Luôn tạo lại Cache mới nhất (đề phòng card bị cắm nhầm slot PCI)
-	if GetCurrentMode() == "hybrid" {
-		pciBus := GetNvidiaGpuPciBus()
-		writeCacheFile(pciBus)
-	}
-}
-
-// Hàm này lấy PCI ID an toàn: Đọc từ cache trước, nếu không có mới tìm bằng lspci
-// (Thay thế cho hành động monkey patch global get_nvidia_gpu_pci_bus của tác giả gốc)
-func ReadPciBusWithCache() string {
-	if fileExists(CacheFilePath) {
-		content, err := os.ReadFile(CacheFilePath)
-		if err != nil {
-			LogError("Failed to read cache file: %v", err)
-			os.Exit(1)
-		}
-
-		var data CacheData
-		if err := json.Unmarshal(content, &data); err != nil {
-			LogError("Failed to parse cache file: %v", err)
-			os.Exit(1)
-		}
-
-		// Trong quá trình read có thể log debug
-		// LogDebug("Using cached PCI ID: %s", data.NvidiaGpuPciBus)
-		return data.NvidiaGpuPciBus
-	} else if GetCurrentMode() == "hybrid" {
-		return GetNvidiaGpuPciBus()
-	}
-
-	LogError("No cache present. Operation requires that the system be in the hybrid Optimus mode")
-	os.Exit(1)
-	return ""
+	return "hybrid"
 }

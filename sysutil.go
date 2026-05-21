@@ -3,37 +3,29 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
 )
 
-// Verbose flag (sẽ được set từ CLI args)
-var Verbose bool
+var Verbose bool // Cờ cắm từ CLI
 
 // --- Hệ thống Logging ---
 func LogInfo(format string, a ...interface{}) {
 	fmt.Printf("INFO: "+format+"\n", a...)
 }
-
 func LogWarning(format string, a ...interface{}) {
 	fmt.Printf("WARNING: "+format+"\n", a...)
 }
-
 func LogError(format string, a ...interface{}) {
 	fmt.Printf("ERROR: "+format+"\n", a...)
 }
-
 func LogDebug(format string, a ...interface{}) {
 	if Verbose {
 		fmt.Printf("DEBUG: "+format+"\n", a...)
 	}
 }
 
-// --- Tiện ích OS ---
-
-// Kiểm tra quyền root, exit nếu không phải root
+// Kiểm tra quyền Root
 func AssertRoot() {
 	if os.Geteuid() != 0 {
 		LogError("This operation requires root privileges")
@@ -41,81 +33,7 @@ func AssertRoot() {
 	}
 }
 
-// Hàm ghi file. Tự động tạo thư mục cha nếu chưa có.
-func CreateFile(path, content string, executable bool) {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		LogError("Failed to create directory '%s': %v", dir, err)
-		return
-	}
-
-	mode := fs.FileMode(0644)
-	if executable {
-		mode = 0755
-	}
-
-	err := os.WriteFile(path, []byte(content), mode)
-	if err != nil {
-		LogError("Failed to create file '%s': %v", path, err)
-		return
-	}
-
-	if executable {
-		if err := os.Chmod(path, 0755); err != nil {
-			LogError("Failed to set execution privilege to file '%s': %v", path, err)
-		} else {
-			LogInfo("Added execution privilege to file %s", path)
-		}
-	}
-
-	LogInfo("Created file %s", path)
-	if Verbose {
-		fmt.Print(content)
-	}
-}
-
-// Xóa file rác và restore backup (bê y nguyên logic hàm cleanup python)
-func Cleanup() {
-	toRemove := []string{
-		BlacklistPath,
-		UdevIntegratedPath,
-		UdevPmPath,
-		XorgPath,
-		ExtraXorgPath,
-		ModesetPath,
-		LightdmScriptPath,
-		LightdmConfigPath,
-		// legacy files
-		"/etc/X11/xorg.conf.d/90-nvidia.conf",
-		"/lib/udev/rules.d/50-remove-nvidia.rules",
-		"/lib/udev/rules.d/80-nvidia-pm.rules",
-	}
-
-	for _, path := range toRemove {
-		err := os.Remove(path)
-		if err == nil {
-			LogInfo("Removed file %s", path)
-		} else if !os.IsNotExist(err) {
-			// Chỉ log error nếu lỗi không phải là "file không tồn tại" (errno 2 trong Python)
-			LogError("Failed to remove file '%s': %v", path, err)
-		}
-	}
-
-	// Khôi phục Xsetup backup nếu có
-	backupPath := SddmXsetupPath + ".bak"
-	if _, err := os.Stat(backupPath); err == nil {
-		LogInfo("Restoring Xsetup backup")
-		content, readErr := os.ReadFile(backupPath)
-		if readErr == nil {
-			CreateFile(SddmXsetupPath, string(content), false)
-			os.Remove(backupPath)
-			LogInfo("Removed file %s", backupPath)
-		}
-	}
-}
-
-// RunCommand gọi bash/shell.
-// Tham số 'quiet' tương đương stdout=subprocess.DEVNULL trong Python.
+// RunCommand bọc os/exec an toàn
 func RunCommand(quiet bool, name string, args ...string) (int, error) {
 	cmd := exec.Command(name, args...)
 
@@ -126,7 +44,6 @@ func RunCommand(quiet bool, name string, args ...string) (int, error) {
 		cmd.Stdout = nil
 		cmd.Stderr = nil
 	} else {
-		// Capture to internal buffer if we want to swallow output but return err
 		var out bytes.Buffer
 		cmd.Stdout = &out
 		cmd.Stderr = &out
@@ -140,4 +57,51 @@ func RunCommand(quiet bool, name string, args ...string) (int, error) {
 		return -1, err
 	}
 	return 0, nil
+}
+
+// Lệnh build initramfs trả về error để kích hoạt Rollback nếu thất bại
+func RebuildInitramfs() error {
+	var command []string
+
+	fileExists := func(p string) bool {
+		_, err := os.Stat(p)
+		return err == nil
+	}
+
+	if fileExists("/ostree") || fileExists("/sysroot/ostree") {
+		fmt.Println("Rebuilding the initramfs with rpm-ostree...")
+		command = []string{"rpm-ostree", "initramfs", "--enable", "--arg=--force"}
+	} else if fileExists("/etc/debian_version") {
+		command = []string{"update-initramfs", "-u", "-k", "all"}
+	} else if fileExists("/etc/redhat-release") || fileExists("/usr/bin/zypper") {
+		command = []string{"dracut", "--force", "--regenerate-all"}
+	} else if fileExists("/usr/lib/endeavouros-release") && fileExists("/usr/bin/dracut") {
+		command = []string{"dracut-rebuild"}
+	} else if fileExists("/etc/altlinux-release") {
+		command = []string{"make-initrd"}
+	} else if fileExists("/etc/arch-release") {
+		command = []string{"mkinitcpio", "-P"}
+	} else {
+		return fmt.Errorf("unsupported distribution: could not determine initramfs builder")
+	}
+
+	_, err := exec.LookPath("systemd-inhibit")
+	if err == nil {
+		wrapped := []string{
+			"systemd-inhibit",
+			"--who=envycontrol",
+			"--why", "Rebuilding initramfs",
+			"--",
+		}
+		command = append(wrapped, command...)
+	}
+
+	fmt.Println("Rebuilding the initramfs. DO NOT TURN OFF YOUR COMPUTER...")
+	exitCode, err := RunCommand(!Verbose, command[0], command[1:]...)
+	if exitCode != 0 || err != nil {
+		return fmt.Errorf("initramfs command failed with exit code %d: %v", exitCode, err)
+	}
+
+	fmt.Println("Successfully rebuilt the initramfs!")
+	return nil
 }

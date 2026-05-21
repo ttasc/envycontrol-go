@@ -3,191 +3,114 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 )
 
-// SwitchOptions chứa toàn bộ các cờ tùy chọn khi switch mode
-type SwitchOptions struct {
-	DisplayManager   string
-	ForceComp        bool
-	CoolbitsValue    *int // Dùng pointer để phân biệt giữa việc "có truyền giá trị" và "không truyền"
-	Rtd3Value        *int
-	UseNvidiaCurrent bool
-}
+// SwitchMode là luồng điều phối chính để chuyển mode
+func SwitchMode(targetMode string, opts SwitchOptions) {
+	fmt.Printf("Switching to %s mode\n", targetMode)
 
-// RebuildInitramfs gọi lệnh update initramfs tương ứng với distro hiện tại
-func RebuildInitramfs() {
-	var command []string
+	// 1. Tải trạng thái hiện tại (Đọc Source of Truth)
+	state := LoadState()
 
-	// Dùng if/else if để check sự tồn tại của file cấu hình đặc trưng của từng Distro
-	if fileExists("/ostree") || fileExists("/sysroot/ostree") {
-		fmt.Println("Rebuilding the initramfs with rpm-ostree...")
-		command = []string{"rpm-ostree", "initramfs", "--enable", "--arg=--force"}
-	} else if fileExists("/etc/debian_version") {
-		command = []string{"update-initramfs", "-u", "-k", "all"}
-	} else if fileExists("/etc/redhat-release") || fileExists("/usr/bin/zypper") {
-		command = []string{"dracut", "--force", "--regenerate-all"}
-	} else if fileExists("/usr/lib/endeavouros-release") && fileExists("/usr/bin/dracut") {
-		command = []string{"dracut-rebuild"}
-	} else if fileExists("/etc/altlinux-release") {
-		command = []string{"make-initrd"}
-	} else if fileExists("/etc/arch-release") {
-		command = []string{"mkinitcpio", "-P"}
-	} else {
-		// Không detect được Distro
-		command = []string{}
-	}
-
-	// Nếu hệ thống có systemd-inhibit, wrap lệnh lại để chống sleep/shutdown trong lúc build
-	_, err := exec.LookPath("systemd-inhibit")
-	if err == nil && len(command) > 0 {
-		wrapped := []string{
-			"systemd-inhibit",
-			"--who=envycontrol",
-			"--why", "Rebuilding initramfs",
-			"--",
-		}
-		command = append(wrapped, command...)
-	}
-
-	if len(command) > 0 {
-		fmt.Println("Rebuilding the initramfs...")
-		// Tham số quiet = !Verbose (Nếu Verbose -> in log ra stdout/stderr, nếu không -> DevNull)
-		exitCode, err := RunCommand(!Verbose, command[0], command[1:]...)
-		if exitCode == 0 && err == nil {
-			fmt.Println("Successfully rebuilt the initramfs!")
-		} else {
-			LogError("An error ocurred while rebuilding the initramfs")
-		}
-	}
-}
-
-// Chuyển đổi trạng thái đồ họa (Trái tim của dự án)
-func SwitchMode(mode string, opts SwitchOptions) {
-	fmt.Printf("Switching to %s mode\n", mode)
-
-	switch mode {
-	case "integrated":
-		// 1. Tắt service persistenced
+	// 2. Bật/Tắt systemd service nvidia-persistenced
+	if targetMode == "integrated" {
 		exitCode, _ := RunCommand(!Verbose, "systemctl", "disable", "nvidia-persistenced.service")
 		if exitCode == 0 {
 			fmt.Println("Successfully disabled nvidia-persistenced.service")
 		} else {
-			LogError("An error ocurred while disabling service")
+			LogError("An error occurred while disabling nvidia-persistenced.service")
 		}
-
-		// 2. Dọn rác config cũ
-		Cleanup()
-
-		// 3. Tạo rule giết card Nvidia
-		CreateFile(BlacklistPath, BlacklistContent, false)
-		CreateFile(UdevIntegratedPath, UdevIntegrated, false)
-
-		// 4. Build lại kernel ramdisk
-		RebuildInitramfs()
-
-	case "hybrid":
-		rtd3Str := "False"
-		if opts.Rtd3Value != nil {
-			rtd3Str = fmt.Sprintf("%d", *opts.Rtd3Value)
-		}
-		fmt.Printf("Enable PCI-Express Runtime D3 (RTD3) Power Management: %s\n", rtd3Str)
-
-		Cleanup()
-
+	} else {
 		exitCode, _ := RunCommand(!Verbose, "systemctl", "enable", "nvidia-persistenced.service")
 		if exitCode == 0 {
 			fmt.Println("Successfully enabled nvidia-persistenced.service")
 		} else {
-			LogError("An error ocurred while enabling service")
+			LogError("An error occurred while enabling nvidia-persistenced.service")
 		}
+	}
 
-		if opts.Rtd3Value == nil {
-			if opts.UseNvidiaCurrent {
-				CreateFile(ModesetPath, ModesetCurrentContent, false)
-			} else {
-				CreateFile(ModesetPath, ModesetContent, false)
-			}
+	// 3. Gọi Pure Builder tính toán Kế hoạch (Bản thiết kế)
+	plan, err := BuildTransactionPlan(targetMode, state, opts)
+	if err != nil {
+		LogError("Failed to build transaction plan: %v", err)
+		os.Exit(1)
+	}
+
+	// 4. Bàn giao bản thiết kế cho Transaction Engine (An toàn tuyệt đối)
+	if err := ExecuteTransaction(plan); err != nil {
+		LogError("Transaction aborted: %v", err)
+		os.Exit(1)
+	}
+
+	// 5. Build lại Initramfs để áp dụng
+	if err := RebuildInitramfs(); err != nil {
+		LogError("Initramfs build failed: %v", err)
+		LogError("Triggering Emergency Rollback...")
+
+		if rbErr := RollbackTransaction(); rbErr != nil {
+			LogError("CRITICAL: Rollback failed: %v", rbErr)
 		} else {
-			// Thiết lập modprobe RTD3
-			if opts.UseNvidiaCurrent {
-				CreateFile(ModesetPath, fmt.Sprintf(ModesetCurrentRtd3, *opts.Rtd3Value), false)
-			} else {
-				CreateFile(ModesetPath, fmt.Sprintf(ModesetRtd3, *opts.Rtd3Value), false)
-			}
-			CreateFile(UdevPmPath, UdevPmContent, false)
+			LogWarning("System configs safely rolled back.")
+			LogWarning("Attempting to rebuild initramfs for the rolled-back state...")
+			// Best-effort để đồng bộ lại initramfs với file config vừa được cứu
+			RebuildInitramfs()
 		}
+		os.Exit(1)
+	}
 
-		RebuildInitramfs()
-
-	case "nvidia":
-		coolbitsStr := "False"
-		if opts.CoolbitsValue != nil {
-			coolbitsStr = fmt.Sprintf("%d", *opts.CoolbitsValue)
-		}
-		fmt.Printf("Enable ForceCompositionPipeline: %t\n", opts.ForceComp)
-		fmt.Printf("Enable Coolbits: %s\n", coolbitsStr)
-
-		exitCode, _ := RunCommand(!Verbose, "systemctl", "enable", "nvidia-persistenced.service")
-		if exitCode == 0 {
-			fmt.Println("Successfully enabled nvidia-persistenced.service")
-		} else {
-			LogError("An error ocurred while enabling service")
-		}
-
-		Cleanup()
-
-		// Đọc Cache an toàn thay cho thủ thuật ContextManager của Python
-		nvidiaGpuPciBus := ReadPciBusWithCache()
-		igpuVendor := GetIgpuVendor()
-
-		if igpuVendor == "intel" {
-			CreateFile(XorgPath, fmt.Sprintf(XorgIntel, nvidiaGpuPciBus), false)
-		} else if igpuVendor == "amd" {
-			CreateFile(XorgPath, fmt.Sprintf(XorgAmd, nvidiaGpuPciBus), false)
-		}
-
-		if opts.UseNvidiaCurrent {
-			CreateFile(ModesetPath, ModesetCurrentContent, false)
-		} else {
-			CreateFile(ModesetPath, ModesetContent, false)
-		}
-
-		// Xây dựng Extra Xorg config bằng cách nối chuỗi
-		if opts.ForceComp || opts.CoolbitsValue != nil {
-			extraConfig := ExtraXorgContent
-			if opts.ForceComp {
-				extraConfig += ForceComp
-			}
-			if opts.CoolbitsValue != nil {
-				extraConfig += fmt.Sprintf(Coolbits, *opts.CoolbitsValue)
-			}
-			extraConfig += "EndSection\n"
-			CreateFile(ExtraXorgPath, extraConfig, false)
-		}
-
-		// Thiết lập Display Manager (Hack Xrandr)
-		dm := opts.DisplayManager
-		if dm == "" {
-			dm = GetDisplayManager()
-		}
-
-		if dm == "sddm" {
-			// Backup file Xsetup của sddm nếu nó đã tồn tại
-			if fileExists(SddmXsetupPath) {
-				LogInfo("Creating Xsetup backup")
-				content, _ := os.ReadFile(SddmXsetupPath)
-				CreateFile(SddmXsetupPath+".bak", string(content), false)
-			}
-			CreateFile(SddmXsetupPath, GenerateXrandrScript(igpuVendor), true) // File script cần +x (executable = true)
-		} else if dm == "lightdm" {
-			CreateFile(LightdmScriptPath, GenerateXrandrScript(igpuVendor), true)
-			CreateFile(LightdmConfigPath, LightdmConfigContent, false)
-		}
-
-		RebuildInitramfs()
+	// 6. Cập nhật State File SAU KHI mọi thứ đã thành công
+	state.CurrentMode = targetMode
+	if err := SaveState(state); err != nil {
+		LogWarning("Mode switched successfully, but failed to save state file: %v", err)
 	}
 
 	fmt.Println("Operation completed successfully")
 	fmt.Println("Please reboot your computer for changes to take effect!")
+}
+
+// ResetSystem khôi phục hệ thống về trạng thái ban đầu của Distro
+func ResetSystem() {
+	fmt.Println("Reverting changes made by EnvyControl...")
+
+	// Dùng Transaction rỗng ToCreate để dọn dẹp an toàn có backup
+	plan := TransactionPlan{
+		ToRemove: []string{
+			BlacklistPath, UdevIntegratedPath, UdevPmPath,
+			XorgPath, ExtraXorgPath, ModesetPath,
+			LightdmScriptPath, LightdmConfigPath,
+			"/etc/X11/xorg.conf.d/90-nvidia.conf",
+			"/lib/udev/rules.d/50-remove-nvidia.rules",
+			"/lib/udev/rules.d/80-nvidia-pm.rules",
+		},
+		ToCreate: []FileConfig{},
+	}
+
+	if err := ExecuteTransaction(plan); err != nil {
+		LogError("Reset transaction failed: %v", err)
+		os.Exit(1)
+	}
+
+	os.Remove(StateFilePath)
+
+	if err := RebuildInitramfs(); err != nil {
+		LogError("Initramfs rebuild failed during reset: %v", err)
+		LogError("Triggering rollback...")
+		RollbackTransaction()
+		os.Exit(1)
+	}
+	fmt.Println("Operation completed successfully")
+}
+
+// ResetSddm khôi phục file Xsetup mặc định
+func ResetSddm() {
+	fmt.Println("Restoring default Xsetup file...")
+	plan := TransactionPlan{
+		ToRemove: []string{},
+		ToCreate: []FileConfig{{Path: SddmXsetupPath, Content: SddmXsetupContent, Executable: true}},
+	}
+	if err := ExecuteTransaction(plan); err != nil {
+		LogError("Reset SDDM failed: %v", err)
+		os.Exit(1)
+	}
+	fmt.Println("Operation completed successfully")
 }

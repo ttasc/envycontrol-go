@@ -6,36 +6,46 @@ import (
 )
 
 func main() {
-	// 1. Phân tích tham số dòng lệnh
 	opts := ParseArgs(os.Args)
 
-	// 2. Route đến các hành động xử lý Đọc/Ghi thông tin (Không đổi state hệ thống)
+	// --- 1. Nhóm hành động Chỉ Đọc (Query) ---
 	if opts.Query {
-		fmt.Println(GetCurrentMode())
+		state := LoadState()
+		fmt.Println(state.CurrentMode)
 		return
-	} else if opts.CacheCreate {
-		AssertRoot()
-		CreateCache()
-		return
-	} else if opts.CacheDelete {
-		AssertRoot()
-		DeleteCache()
-		return
-	} else if opts.CacheQuery {
-		ShowCache()
+	}
+	if opts.StateQuery {
+		if content, err := os.ReadFile(StateFilePath); err == nil {
+			fmt.Print(string(content))
+		} else {
+			fmt.Printf("ERROR: Could not read %s\n", StateFilePath)
+		}
 		return
 	}
 
-	// 3. Route đến các hành động thay đổi trạng thái phần cứng/hệ điều hành
-	if opts.Switch != "" || opts.ResetSddm || opts.Reset {
+	// --- 2. Nhóm hành động Thay đổi Hệ thống (Yêu cầu Root) ---
+	if opts.Switch != "" || opts.Reset || opts.ResetSddm || opts.StateCreate || opts.StateDelete {
+		AssertRoot()
 
-		// Luôn thiết lập cache trước khi đổi mode
-		SetupCacheAdapter()
+		// Các hành động tương tác với State File (Legacy)
+		if opts.StateCreate {
+			state := RebuildState()
+			if state.CurrentMode != "hybrid" {
+				LogError("--cache-create requires that the system be in the hybrid Optimus mode")
+				os.Exit(1)
+			}
+			SaveState(state)
+			LogInfo("State file forcefully created")
+			return
+		}
+		if opts.StateDelete {
+			os.Remove(StateFilePath)
+			LogInfo("Removed state file")
+			return
+		}
 
+		// Nhóm hành động Orchestrator
 		if opts.Switch != "" {
-			AssertRoot()
-
-			// Map dữ liệu CLI -> SwitchOptions của core switcher
 			switchOpts := SwitchOptions{
 				DisplayManager:   opts.Dm,
 				ForceComp:        opts.ForceComp,
@@ -46,16 +56,9 @@ func main() {
 			SwitchMode(opts.Switch, switchOpts)
 
 		} else if opts.ResetSddm {
-			AssertRoot()
-			CreateFile(SddmXsetupPath, SddmXsetupContent, true)
-			fmt.Println("Operation completed successfully")
-
+			ResetSddm()
 		} else if opts.Reset {
-			AssertRoot()
-			Cleanup()
-			DeleteCache()
-			RebuildInitramfs()
-			fmt.Println("Operation completed successfully")
+			ResetSystem()
 		}
 	}
 }

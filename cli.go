@@ -7,7 +7,6 @@ import (
 	"strings"
 )
 
-// CliOptions chứa trạng thái của tất cả các cờ dòng lệnh do user truyền vào
 type CliOptions struct {
 	Query            bool
 	Switch           string
@@ -18,12 +17,11 @@ type CliOptions struct {
 	UseNvidiaCurrent bool
 	ResetSddm        bool
 	Reset            bool
-	CacheCreate      bool
-	CacheDelete      bool
-	CacheQuery       bool
+	StateCreate      bool // Map từ --cache-create
+	StateDelete      bool // Map từ --cache-delete
+	StateQuery       bool // Map từ --cache-query
 }
 
-// In ra màn hình Help
 func printHelp() {
 	helpText := `usage: envycontrol [-h] [-v] [-q] [-s MODE] [--dm DISPLAY_MANAGER] [--force-comp] [--coolbits [VALUE]] [--rtd3 [VALUE]] [--use-nvidia-current] [--reset-sddm] [--reset] [--verbose]
 
@@ -40,35 +38,30 @@ options:
   --use-nvidia-current  Use nvidia-current instead of nvidia for kernel modules
   --reset-sddm          Restore default Xsetup file
   --reset               Revert changes made by EnvyControl
-  --cache-create        Create cache used by EnvyControl; only works in hybrid mode
-  --cache-delete        Delete cache created by EnvyControl
-  --cache-query         Show cache created by EnvyControl
   --verbose             Enable verbose mode
+
+Legacy options:
+  --cache-create        Force create internal state file (hybrid mode only)
+  --cache-delete        Delete internal state file
+  --cache-query         Show internal state file
 `
 	fmt.Print(helpText)
 }
 
-// Hàm hỗ trợ kiểm tra item có trong mảng string
 func containsStr(slice []string, val string) bool {
 	for _, item := range slice {
-		if item == val {
-			return true
-		}
+		if item == val { return true }
 	}
 	return false
 }
 
-// Hàm hỗ trợ kiểm tra item có trong mảng int
 func containsInt(slice []int, val int) bool {
 	for _, item := range slice {
-		if item == val {
-			return true
-		}
+		if item == val { return true }
 	}
 	return false
 }
 
-// ParseArgs xử lý đối số dòng lệnh và trả về struct CliOptions
 func ParseArgs(args []string) CliOptions {
 	if len(args) == 1 {
 		printHelp()
@@ -104,20 +97,18 @@ func ParseArgs(args []string) CliOptions {
 		case "--force-comp":
 			opts.ForceComp = true
 		case "--coolbits":
-			val := 28 // Default
+			val := 28
 			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				parsedVal, err := strconv.Atoi(args[i+1])
-				if err == nil {
+				if parsedVal, err := strconv.Atoi(args[i+1]); err == nil {
 					val = parsedVal
 					i++
 				}
 			}
 			opts.Coolbits = &val
 		case "--rtd3":
-			val := 2 // Default
+			val := 2
 			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				parsedVal, err := strconv.Atoi(args[i+1])
-				if err == nil {
+				if parsedVal, err := strconv.Atoi(args[i+1]); err == nil {
 					val = parsedVal
 					i++
 				}
@@ -130,22 +121,21 @@ func ParseArgs(args []string) CliOptions {
 		case "--reset":
 			opts.Reset = true
 		case "--cache-create":
-			opts.CacheCreate = true
+			opts.StateCreate = true
 		case "--cache-delete":
-			opts.CacheDelete = true
+			opts.StateDelete = true
 		case "--cache-query":
-			opts.CacheQuery = true
+			opts.StateQuery = true
 		case "--verbose":
-			Verbose = true // Biến global trong sysutil.go
+			Verbose = true
 		default:
 			LogError("unrecognized arguments: %s", arg)
 			os.Exit(1)
 		}
 	}
 
-	// Validate arguments sau khi parse
 	if opts.Switch != "" && !containsStr(SupportedModes, opts.Switch) {
-		LogError("argument -s/--switch: invalid choice: '%s' (choose from 'integrated', 'hybrid', 'nvidia')", opts.Switch)
+		LogError("argument -s/--switch: invalid choice: '%s'", opts.Switch)
 		os.Exit(1)
 	}
 	if opts.Dm != "" && !containsStr(SupportedDisplayManagers, opts.Dm) {
@@ -153,7 +143,7 @@ func ParseArgs(args []string) CliOptions {
 		os.Exit(1)
 	}
 	if opts.Rtd3 != nil && !containsInt(Rtd3Modes, *opts.Rtd3) {
-		LogError("argument --rtd3: invalid choice: %d (choose from 0, 1, 2, 3)", *opts.Rtd3)
+		LogError("argument --rtd3: invalid choice: %d", *opts.Rtd3)
 		os.Exit(1)
 	}
 
