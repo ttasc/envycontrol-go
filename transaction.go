@@ -9,20 +9,17 @@ import (
 	"path/filepath"
 )
 
-// ExecuteTransaction thực thi kế hoạch an toàn. Trả về mảng lưu vết các file vừa tạo.
 func ExecuteTransaction(plan TransactionPlan) ([]string, error) {
 	LogDebug("Preparing to execute filesystem transaction...")
 
 	var createdFiles []string
 
-	// 1. Tạo Backup các file đã tồn tại trên máy
 	err := createBackup(plan)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create backup, aborting transaction: %v", err)
 	}
 	LogInfo("Created safety backup at %s", BackupFilePath)
 
-	// 2. Xóa file rác
 	for _, path := range plan.ToRemove {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			LogWarning("Failed to remove legacy file %s: %v", path, err)
@@ -31,11 +28,10 @@ func ExecuteTransaction(plan TransactionPlan) ([]string, error) {
 		}
 	}
 
-	// 3. Ghi file mới (Atomic)
 	for _, fileConf := range plan.ToCreate {
 		err := atomicWrite(fileConf)
 		if err != nil {
-			// Fail-Fast: Lỗi đĩa -> Lập tức tự cứu lấy hệ thống với danh sách file đã sinh ra
+
 			LogError("Filesystem error during transaction: %v", err)
 			LogError("Triggering Emergency Rollback...")
 			if rbErr := RollbackTransaction(createdFiles); rbErr != nil {
@@ -43,14 +39,13 @@ func ExecuteTransaction(plan TransactionPlan) ([]string, error) {
 			}
 			return createdFiles, fmt.Errorf("transaction failed but system was safely rolled back")
 		}
-		// Đưa vào mảng lưu vết
+
 		createdFiles = append(createdFiles, fileConf.Path)
 	}
 
 	return createdFiles, nil
 }
 
-// atomicWrite sử dụng file .tmp và System call Rename để đảm bảo tính nguyên tử (POSIX)
 func atomicWrite(conf FileConfig) error {
 	dir := filepath.Dir(conf.Path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -83,15 +78,20 @@ func atomicWrite(conf FileConfig) error {
 	return nil
 }
 
-// createBackup gom các file sẽ bị ảnh hưởng vào archive nén
 func createBackup(plan TransactionPlan) error {
 	pathsToBackup := make(map[string]bool)
-	for _, p := range plan.ToRemove { pathsToBackup[p] = true }
-	for _, p := range plan.ToCreate { pathsToBackup[p.Path] = true }
+	for _, p := range plan.ToRemove {
+		pathsToBackup[p] = true
+	}
+	for _, p := range plan.ToCreate {
+		pathsToBackup[p.Path] = true
+	}
 
 	os.MkdirAll(filepath.Dir(BackupFilePath), 0755)
 	backupFile, err := os.Create(BackupFilePath)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer backupFile.Close()
 
 	gw := gzip.NewWriter(backupFile)
@@ -104,16 +104,24 @@ func createBackup(plan TransactionPlan) error {
 		info, err := os.Stat(path)
 		if err == nil && !info.IsDir() {
 			header, err := tar.FileInfoHeader(info, info.Name())
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			header.Name = path
 
-			if err := tw.WriteHeader(header); err != nil { return err }
+			if err := tw.WriteHeader(header); err != nil {
+				return err
+			}
 
 			file, err := os.Open(path)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			_, err = io.Copy(tw, file)
 			file.Close()
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			LogDebug("Backed up %s", path)
 		}
 	}
@@ -121,44 +129,53 @@ func createBackup(plan TransactionPlan) error {
 	return nil
 }
 
-// RollbackTransaction xóa các file rác mới sinh ra, sau đó giải nén backup đè lại hệ thống
 func RollbackTransaction(createdFiles []string) error {
 	LogInfo("Starting rollback process...")
 
-	// 1. Dọn dẹp Orphaned Files
 	for _, f := range createdFiles {
 		if err := os.Remove(f); err == nil {
 			LogDebug("Rollback: Removed orphaned file %s", f)
 		}
 	}
 
-	// 2. Phục hồi từ Archive
 	if _, err := os.Stat(BackupFilePath); os.IsNotExist(err) {
 		return fmt.Errorf("no backup found at %s", BackupFilePath)
 	}
 
 	backupFile, err := os.Open(BackupFilePath)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer backupFile.Close()
 
 	gr, err := gzip.NewReader(backupFile)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer gr.Close()
 
 	tr := tar.NewReader(gr)
 
 	for {
 		header, err := tr.Next()
-		if err == io.EOF { break }
-		if err != nil { return err }
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
 
 		targetPath := header.Name
-		if targetPath == "" { continue }
+		if targetPath == "" {
+			continue
+		}
 
 		os.MkdirAll(filepath.Dir(targetPath), 0755)
 
 		file, err := os.OpenFile(targetPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(header.Mode))
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 
 		if _, err := io.Copy(file, tr); err != nil {
 			file.Close()

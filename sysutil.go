@@ -8,9 +8,8 @@ import (
 	"os/exec"
 )
 
-var Verbose bool // Cờ cắm từ CLI
+var Verbose bool
 
-// --- Hệ thống Logging ---
 func LogInfo(format string, a ...interface{}) {
 	fmt.Printf("INFO: "+format+"\n", a...)
 }
@@ -26,7 +25,6 @@ func LogDebug(format string, a ...interface{}) {
 	}
 }
 
-// Kiểm tra quyền Root
 func AssertRoot() {
 	if os.Geteuid() != 0 {
 		LogError("This operation requires root privileges")
@@ -34,7 +32,6 @@ func AssertRoot() {
 	}
 }
 
-// RunCommand bọc os/exec an toàn, hỗ trợ ngắt tiến trình bằng Context
 func RunCommand(ctx context.Context, quiet bool, name string, args ...string) (int, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 
@@ -60,7 +57,6 @@ func RunCommand(ctx context.Context, quiet bool, name string, args ...string) (i
 	return 0, nil
 }
 
-// Lệnh build initramfs. Bắt lỗi Context Canceled nếu bị user ngắt.
 func RebuildInitramfs(ctx context.Context) error {
 	var command []string
 
@@ -102,7 +98,7 @@ func RebuildInitramfs(ctx context.Context) error {
 	fmt.Println("Rebuilding the initramfs. DO NOT TURN OFF YOUR COMPUTER...")
 	exitCode, err := RunCommand(ctx, !Verbose, command[0], command[1:]...)
 	if err != nil {
-		// Nhận diện lỗi do Signal Interruption
+
 		if ctx.Err() == context.Canceled {
 			return fmt.Errorf("initramfs rebuild was interrupted by user/system")
 		}
@@ -113,7 +109,6 @@ func RebuildInitramfs(ctx context.Context) error {
 	return nil
 }
 
-// BackupSddmXsetup tạo bản sao lưu vĩnh viễn cho Xsetup của SDDM.
 func BackupSddmXsetup() {
 	bakPath := SddmXsetupPath + ".bak"
 
@@ -133,7 +128,6 @@ func BackupSddmXsetup() {
 	}
 }
 
-// RestoreSddmXsetup khôi phục file Xsetup gốc và dọn dẹp file .bak
 func RestoreSddmXsetup() {
 	bakPath := SddmXsetupPath + ".bak"
 

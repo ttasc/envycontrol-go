@@ -8,7 +8,6 @@ import (
 func main() {
 	opts := ParseArgs(os.Args)
 
-	// --- 1. Nhóm hành động Chỉ Đọc (Query) ---
 	if opts.Query {
 		liveMode := GuessCurrentMode()
 		fmt.Println(liveMode)
@@ -23,11 +22,9 @@ func main() {
 		return
 	}
 
-	// --- 2. Nhóm hành động Thay đổi Hệ thống (Yêu cầu Root) ---
 	if opts.Switch != "" || opts.Reset || opts.ResetSddm || opts.StateCreate || opts.StateDelete {
 		AssertRoot()
 
-		// Các hành động tương tác với State File (Legacy)
 		if opts.StateCreate {
 			state := RebuildState()
 			if state.CurrentMode != "hybrid" {
@@ -44,7 +41,6 @@ func main() {
 			return
 		}
 
-		// Nhóm hành động Orchestrator
 		if opts.Switch != "" {
 			switchOpts := SwitchOptions{
 				DisplayManager:   opts.Dm,

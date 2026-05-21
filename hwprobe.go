@@ -10,7 +10,6 @@ import (
 	"strings"
 )
 
-// ProbeNvidiaPciBus quét và phân tích lspci để lấy Bus ID của card Nvidia
 func ProbeNvidiaPciBus() (string, error) {
 	out, err := exec.Command("lspci").Output()
 	if err != nil {
@@ -34,7 +33,6 @@ func ProbeNvidiaPciBus() (string, error) {
 		return "", fmt.Errorf("could not find Nvidia GPU on PCI bus")
 	}
 
-	// Phân tách Hex an toàn và chuyển sang định dạng PCI:Dec:Dec:Dec
 	busDevFunc := strings.Split(pciBusID, ":")
 	if len(busDevFunc) != 2 {
 		return "", fmt.Errorf("invalid PCI format: %s", pciBusID)
@@ -57,7 +55,6 @@ func ProbeNvidiaPciBus() (string, error) {
 	return fmt.Sprintf("PCI:%d:%d:%d", busDec, devDec, funcDec), nil
 }
 
-// ProbeIgpuVendor quét iGPU trên máy (Intel hoặc AMD)
 func ProbeIgpuVendor() string {
 	out, _ := exec.Command("lspci").Output()
 	lines := strings.Split(string(out), "\n")
@@ -74,7 +71,6 @@ func ProbeIgpuVendor() string {
 	return ""
 }
 
-// ProbeDisplayManager quét file cấu hình systemd để lấy DM hiện tại
 func ProbeDisplayManager() string {
 	content, err := os.ReadFile("/etc/systemd/system/display-manager.service")
 	if err != nil {
@@ -87,13 +83,12 @@ func ProbeDisplayManager() string {
 	if len(match) > 1 {
 		parts := strings.Fields(match[1])
 		if len(parts) > 0 {
-			return filepath.Base(parts[0]) // Chỉ lấy "sddm"
+			return filepath.Base(parts[0])
 		}
 	}
 	return ""
 }
 
-// ProbeAmdIgpuName dùng xrandr để tìm chính xác tên provider AMD
 func ProbeAmdIgpuName() string {
 	if _, err := os.Stat("/usr/bin/xrandr"); os.IsNotExist(err) {
 		return ""
@@ -109,7 +104,6 @@ func ProbeAmdIgpuName() string {
 	return ""
 }
 
-// GenerateXrandrScript tạo nội dung script xrandr để xuất hình trên Nvidia mode
 func GenerateXrandrScript(igpuVendor string) string {
 	if igpuVendor == "intel" {
 		return fmt.Sprintf(NvidiaXrandrScript, "modesetting")

@@ -8,7 +8,6 @@ import (
 	"syscall"
 )
 
-// SwitchMode là luồng điều phối chính để chuyển mode
 func SwitchMode(targetMode string, opts SwitchOptions) {
 	fmt.Printf("Switching to %s mode\n", targetMode)
 
@@ -26,7 +25,6 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		}
 	}
 
-	// Lệnh systemctl chạy nhanh nên không cần ngắt, dùng Background Context
 	ctxBg := context.Background()
 	if targetMode == "integrated" {
 		exitCode, _ := RunCommand(ctxBg, !Verbose, "systemctl", "disable", "nvidia-persistenced.service")
@@ -50,7 +48,6 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		os.Exit(1)
 	}
 
-	// [CƠ CHẾ BẢO VỆ CONTEXT]: Tạo lá chắn ngắt toàn cục
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -60,7 +57,6 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		os.Exit(1)
 	}
 
-	// Truyền Context vào Initramfs. Nếu bị ngắt, tiến trình con sẽ bị Kill tức khắc.
 	if err := RebuildInitramfs(ctx); err != nil {
 		LogError("Initramfs build failed or was interrupted: %v", err)
 		LogError("Triggering Emergency Rollback...")
@@ -70,7 +66,7 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		} else {
 			LogWarning("System configs safely rolled back.")
 			LogWarning("Attempting to rebuild initramfs for the rolled-back state...")
-			// Phục hồi Initramfs bắt buộc dùng Background Context (vì cái cũ đã bị Canceled)
+
 			RebuildInitramfs(context.Background())
 		}
 		os.Exit(1)
@@ -85,7 +81,6 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 	fmt.Println("Please reboot your computer for changes to take effect!")
 }
 
-// ResetSystem khôi phục hệ thống về trạng thái ban đầu của Distro
 func ResetSystem() {
 	fmt.Println("Reverting changes made by EnvyControl...")
 
@@ -131,7 +126,6 @@ func ResetSystem() {
 	fmt.Println("Operation completed successfully")
 }
 
-// ResetSddm khôi phục file Xsetup mặc định
 func ResetSddm() {
 	fmt.Println("Restoring default Xsetup file...")
 	plan := TransactionPlan{
@@ -142,10 +136,9 @@ func ResetSddm() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	// Dù không chạy initramfs, I/O của SDDM vẫn cần an toàn
 	_, err := ExecuteTransaction(plan)
 	if err != nil {
-		// Dùng ctx để kiểm tra xem lỗi là do đĩa cứng hay do người dùng ngắt
+
 		if ctx.Err() == context.Canceled {
 			LogError("Reset SDDM was interrupted by user.")
 		} else {

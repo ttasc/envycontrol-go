@@ -17,9 +17,9 @@ type CliOptions struct {
 	UseNvidiaCurrent bool
 	ResetSddm        bool
 	Reset            bool
-	StateCreate      bool // Map từ --cache-create
-	StateDelete      bool // Map từ --cache-delete
-	StateQuery       bool // Map từ --cache-query
+	StateCreate      bool
+	StateDelete      bool
+	StateQuery       bool
 }
 
 func printHelp() {
@@ -50,14 +50,18 @@ Legacy options:
 
 func containsStr(slice []string, val string) bool {
 	for _, item := range slice {
-		if item == val { return true }
+		if item == val {
+			return true
+		}
 	}
 	return false
 }
 
 func containsInt(slice []int, val int) bool {
 	for _, item := range slice {
-		if item == val { return true }
+		if item == val {
+			return true
+		}
 	}
 	return false
 }
