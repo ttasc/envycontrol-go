@@ -1,14 +1,10 @@
-# Tên của file thực thi
 APP_NAME = envycontrol
 
-# Đường dẫn cài đặt mặc định
 PREFIX ?= /usr/local
 BINDIR = $(PREFIX)/bin
 
-# Khai báo các target không phải là file vật lý
 .PHONY: all build clean install uninstall
 
-# Target mặc định khi gõ `make`
 all: build
 
 build:

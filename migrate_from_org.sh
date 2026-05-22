@@ -1,11 +1,10 @@
 #!/bin/sh
-# Script di cư dữ liệu từ EnvyControl Python (V1) sang EnvyControl Go (V2)
+# Script to move "cache" from Python-version and convert to "state" in Go-version
 
 OLD_CACHE="/var/cache/envycontrol/cache.json"
 NEW_STATE_DIR="/etc/envycontrol"
 NEW_STATE_FILE="$NEW_STATE_DIR/state.json"
 
-# Yêu cầu quyền root
 if [ "$(id -u)" -ne 0 ]; then
     echo "ERROR: Run this script with sudo."
     exit 1
@@ -18,7 +17,7 @@ fi
 
 echo "INFO: Found legacy cache. Starting migration..."
 
-# 1. Trích xuất PCI Bus ID từ file JSON cũ (Dùng cut/grep thay vì jq để thuần POSIX)
+# 1. Extract PCI Bus ID from old JSON file
 PCI_BUS=$(grep '"nvidia_gpu_pci_bus"' "$OLD_CACHE" | cut -d '"' -f 4)
 
 if [ -z "$PCI_BUS" ]; then
@@ -26,7 +25,7 @@ if [ -z "$PCI_BUS" ]; then
     exit 1
 fi
 
-# 2. Quét iGPU Vendor
+# 2. Scan iGPU Vendor
 IGPU_VENDOR="unknown"
 if lspci | grep -iE "VGA compatible controller|Display controller" | grep -iq "Intel"; then
     IGPU_VENDOR="intel"
@@ -34,7 +33,7 @@ elif lspci | grep -iE "VGA compatible controller|Display controller" | grep -iqE
     IGPU_VENDOR="amd"
 fi
 
-# 3. Đoán Mode hiện tại
+# 3. Guess Current Mode
 CURRENT_MODE="hybrid"
 if [ -f "/etc/modprobe.d/blacklist-nvidia.conf" ] && { [ -f "/etc/udev/rules.d/50-remove-nvidia.rules" ] || [ -f "/lib/udev/rules.d/50-remove-nvidia.rules" ]; }; then
     CURRENT_MODE="integrated"
@@ -42,7 +41,7 @@ elif [ -f "/etc/X11/xorg.conf" ] && [ -f "/etc/modprobe.d/nvidia.conf" ]; then
     CURRENT_MODE="nvidia"
 fi
 
-# 4. Tạo thư mục và ghi file State mới
+# 4. Create new dir and write new state
 mkdir -p "$NEW_STATE_DIR"
 chmod 755 "$NEW_STATE_DIR"
 
@@ -55,7 +54,7 @@ cat <<EOF > "$NEW_STATE_FILE"
 EOF
 chmod 644 "$NEW_STATE_FILE"
 
-# 5. Dọn dẹp tàn dư cũ
+# 5. Removing old things
 rm -f "$OLD_CACHE"
 rmdir /var/cache/envycontrol 2>/dev/null || true
 
