@@ -27,7 +27,11 @@ options:
   -q, --query       Query the current graphics mode
   -s, --switch      Switch the graphics mode. Available choices: integrated, hybrid, nvidia
   --rtd3 [VALUE]    Setup PCI-Express Runtime D3 Power Management on Hybrid mode.
-                    Available choices: 0, 1, 2, 3. Default if specified: 2
+                    Available choices:
+                      0 = Disabled: No power management.
+                      1 = Coarse-grained: Turns off GPU when idle, but keeps memory powered.
+                      2 = Fine-grained: Completely turns off GPU and memory when idle. (Default)
+                      3 = Fine-grained (Ampere+): Specific to RTX 30-series architectures and newer.
   --reset           Revert all changes and restore system defaults
   --verbose         Enable debug logs and system command outputs
 
