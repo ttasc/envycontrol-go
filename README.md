@@ -4,7 +4,7 @@
 
 ---
 
-### 🏛️ Tribute & Core Philosophy
+## 🏛️ Tribute & Core Philosophy
 
 **The Story:**
 EnvyControl was originally created in 2021 by [Victor (bayasdev)](https://github.com/bayasdev) as a Python script. It became a beloved staple in the Linux community for taming Nvidia Optimus laptops. When putting the original project into maintenance mode, Victor wrote: *"If I built this today, I'd probably use Go or Rust :)"*
@@ -18,7 +18,7 @@ This Go rewrite takes a strict Unix philosophy approach: **EnvyControl now ONLY 
 
 ---
 
-### ✨ Why the Go Rewrite? (What's New)
+## ✨ Why the Go Rewrite? (What's New)
 
 Rebuilding this tool in Go allowed us to introduce enterprise-grade safety mechanisms:
 
@@ -29,33 +29,33 @@ Rebuilding this tool in Go allowed us to introduce enterprise-grade safety mecha
 
 ---
 
-### 📖 Graphics Modes Explained
+## 📖 Graphics Modes Explained
 
 EnvyControl supports three distinct operational modes:
 
-#### 1. `integrated`
+### 1. `integrated`
 *   **How it works:** Completely powers off the Nvidia dGPU by blacklisting modules and removing the card from the PCI bus via Udev rules.
 *   **Pros:** Maximum battery life. Zero fan noise. Flawless Wayland experience.
 *   **Cons:** You cannot use external monitors if your laptop's HDMI/DisplayPort is physically wired to the Nvidia card.
 
-#### 2. `hybrid`
+### 2. `hybrid`
 *   **How it works:** The default Windows-like behavior. Uses PRIME offloading. The dGPU sleeps and dynamically wakes up only when requested (RTD3).
 *   **Pros:** Good balance of battery and on-demand performance.
 *   **Cons:** External displays may lag or fail to work properly depending on your laptop's internal MUX switch and port wiring.
 
-#### 3. `nvidia`
+### 3. `nvidia`
 *   **How it works:** Forces the Nvidia dGPU to stay awake and handle all rendering.
 *   **Pros:** Maximum performance. Required for reliable external monitor usage on most laptops. Best for fixing X11 screen tearing.
 *   **Cons:** Terrible battery life. Your laptop will run hotter. Wayland sessions may default back to X11 depending on your distro.
 
 ---
 
-### ⬇️ Installation
+## ⬇️ Installation
 
-#### Pre-compiled Binary (Recommended)
+### Pre-compiled Binary (Recommended)
 Download the [latest](https://github.com/ttasc/envycontrol-go/releases) static binary, make it executable, and move it to your system path.
 
-#### Build from Source
+### Build from Source
 If you have the Go toolchain installed:
 
 ```bash
@@ -65,7 +65,7 @@ make build
 sudo make install
 ```
 
-#### 🗑️ Uninstallation
+### 🗑️ Uninstallation
 
 Do **not** just delete the binary manually. The system needs to revert the configurations and safely rebuild your boot image (`initramfs`) to avoid a black screen on the next boot.
 
@@ -82,7 +82,7 @@ sudo rm -rf /var/lib/envycontrol
 
 ---
 
-### ⚡️ Usage
+## ⚡️ Usage
 
 Check your current active mode:
 ```bash
@@ -104,7 +104,7 @@ Switch to Nvidia mode:
 sudo envycontrol -s nvidia
 ```
 
-#### The `NV_MODULE` Environment Variable
+### The `NV_MODULE` Environment Variable
 If your distribution uses a non-standard Nvidia kernel module name (e.g., Debian sometimes uses `nvidia-current`), you can pass the `NV_MODULE` environment variable instead of relying on legacy flags:
 
 ```bash
@@ -113,11 +113,11 @@ sudo NV_MODULE="nvidia-current" envycontrol -s nvidia
 
 ---
 
-### 🛠️ The "Do-It-Yourself" Guide (Manual Configurations)
+## 🛠️ The "Do-It-Yourself" Guide (Manual Configurations)
 
 Because EnvyControl now strictly focuses on hardware states, it **does not** configure your Display Manager or X11 tearing fixes. If you require these features in `nvidia` mode, here is how to apply them manually.
 
-#### 1. Display Manager Setup (For `nvidia` mode)
+### 1. Display Manager Setup (For `nvidia` mode)
 To ensure your Display Manager routes the screen correctly when exclusively using the Nvidia GPU, you need to run this `xrandr` script upon login:
 
 ```bash
@@ -132,7 +132,7 @@ xrandr --auto
 *   **GDM (GNOME):** GDM heavily favors Wayland now. If you force X11, you may need to place the script in `/etc/gdm3/Init/Default`. However, Wayland usually handles Nvidia routing natively without `xrandr` hacks.
 *   **startx / Window Managers:** Simply add the commands to your `~/.xinitrc` before executing your WM.
 
-#### 2. X11 Hacks (Overclocking & Tearing Fixes)
+### 2. X11 Hacks (Overclocking & Tearing Fixes)
 If you experience screen tearing on X11 or want to enable GPU overclocking (Coolbits), create a custom Xorg configuration file:
 
 ```bash
@@ -153,7 +153,7 @@ EndSection
 
 ---
 
-### 🚑 Troubleshooting & FAQ
+## 🚑 Troubleshooting & FAQ
 
 **Ubuntu Conflict (gpu-manager)**
 Ubuntu bundles its own Optimus tool which fights with EnvyControl. Disable it before switching modes:
@@ -179,7 +179,7 @@ sudo envycontrol --reset
 
 ---
 
-### 🤝 Contributing & License
+## 🤝 Contributing & License
 
 EnvyControl is free and open-source software. Continuing the legacy of the original project, this rewrite is released under the [MIT License](LICENSE).
 
