@@ -7,14 +7,6 @@ type SwitchOptions struct {
 	Rtd3Value    *int   // Optional Runtime D3 power management level (0, 1, 2, 3)
 }
 
-// SystemState represents the actual, persistent hardware and software state
-// of the machine. It acts as the "Source of Truth".
-type SystemState struct {
-	CurrentMode     string `json:"current_mode"`   // The currently active graphics mode (integrated, hybrid, nvidia)
-	IgpuVendor      string `json:"igpu_vendor"`    // The vendor of the integrated GPU (intel or amd)
-	NvidiaGpuPciBus string `json:"nvidia_pci_bus"` // The formatted PCI Bus ID of the Nvidia dGPU (e.g., PCI:1:0:0)
-}
-
 // FileConfig represents a single file that needs to be written to the filesystem.
 type FileConfig struct {
 	Path       string // Absolute path where the file will be written

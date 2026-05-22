@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 )
 
@@ -79,6 +80,28 @@ func RunCommand(ctx context.Context, quiet bool, name string, args ...string) (i
 	return 0, nil
 }
 
+// parseOSRelease parses /etc/os-release to identify the Linux distribution safely.
+func parseOSRelease() (id string, idLike string) {
+	data, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		data, err = os.ReadFile("/usr/lib/os-release") // Fallback
+		if err != nil {
+			return "", ""
+		}
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "ID=") {
+			id = strings.Trim(line[3:], `"'`)
+		} else if strings.HasPrefix(line, "ID_LIKE=") {
+			idLike = strings.Trim(line[8:], `"'`)
+		}
+	}
+	return id, idLike
+}
+
 // RebuildInitramfs determines the current Linux distribution and invokes the
 // correct tool to regenerate the initramfs. It respects Context cancellation.
 func RebuildInitramfs(ctx context.Context) error {
@@ -89,34 +112,37 @@ func RebuildInitramfs(ctx context.Context) error {
 		return err == nil
 	}
 
-	// Detect appropriate initramfs builder
+	// 1. Check for Ostree-based immutable systems first
 	if fileExists("/ostree") || fileExists("/sysroot/ostree") {
 		fmt.Println("Rebuilding the initramfs with rpm-ostree...")
 		command = []string{"rpm-ostree", "initramfs", "--enable", "--arg=--force"}
-	} else if fileExists("/etc/debian_version") {
-		command = []string{"update-initramfs", "-u", "-k", "all"}
-	} else if fileExists("/etc/redhat-release") || fileExists("/usr/bin/zypper") {
-		command = []string{"dracut", "--force", "--regenerate-all"}
-	} else if fileExists("/usr/lib/endeavouros-release") && fileExists("/usr/bin/dracut") {
-		command = []string{"dracut-rebuild"}
-	} else if fileExists("/etc/altlinux-release") {
-		command = []string{"make-initrd"}
-	} else if fileExists("/etc/arch-release") {
-		command = []string{"mkinitcpio", "-P"}
 	} else {
-		LogWarning("Unsupported distribution: could not determine initramfs builder.")
-		LogWarning("Skipping initramfs rebuild. You may need to update your boot image manually.")
-		return nil
+		// 2. Parse /etc/os-release for standard systems
+		id, idLike := parseOSRelease()
+		osList := id + " " + idLike // Combine to easily search families
+
+		if strings.Contains(osList, "debian") || strings.Contains(osList, "ubuntu") {
+			command = []string{"update-initramfs", "-u", "-k", "all"}
+		} else if strings.Contains(osList, "fedora") || strings.Contains(osList, "rhel") || strings.Contains(osList, "centos") || strings.Contains(osList, "suse") {
+			command = []string{"dracut", "--force", "--regenerate-all"}
+		} else if strings.Contains(osList, "arch") {
+			if id == "endeavouros" && fileExists("/usr/bin/dracut") {
+				command = []string{"dracut-rebuild"}
+			} else {
+				command = []string{"mkinitcpio", "-P"}
+			}
+		} else if strings.Contains(osList, "altlinux") {
+			command = []string{"make-initrd"}
+		} else {
+			LogWarning("Unsupported distribution (ID: %s). Could not determine initramfs builder.", id)
+			LogWarning("Skipping initramfs rebuild. You may need to update your boot image manually.")
+			return nil
+		}
 	}
 
 	// Wrap with systemd-inhibit to prevent sleep/shutdown during critical build
 	if _, err := exec.LookPath("systemd-inhibit"); err == nil {
-		wrapped := []string{
-			"systemd-inhibit",
-			"--who=envycontrol",
-			"--why", "Rebuilding initramfs",
-			"--",
-		}
+		wrapped := []string{"systemd-inhibit", "--who=envycontrol", "--why", "Rebuilding initramfs", "--"}
 		command = append(wrapped, command...)
 	}
 

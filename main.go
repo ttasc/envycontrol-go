@@ -11,7 +11,6 @@ func main() {
 	opts := ParseArgs(os.Args)
 
 	// --- Phase 1: Read-Only Actions (No Root Required) ---
-
 	if opts.Query {
 		liveMode := GuessCurrentMode()
 		fmt.Println(liveMode)
@@ -24,7 +23,6 @@ func main() {
 	}
 
 	// --- Phase 2: Mutating Actions (Root Required) ---
-
 	AssertRoot()
 
 	// Capture the environment variable for custom kernel module names
