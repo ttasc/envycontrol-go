@@ -166,27 +166,35 @@ EndSection
 
 ## 🚑 Troubleshooting & FAQ
 
-**Ubuntu Conflict (gpu-manager)**
+- **Ubuntu Conflict (gpu-manager)**</br>
 Ubuntu bundles its own Optimus tool which fights with EnvyControl. Disable it before switching modes:
-```bash
-sudo prime-select on-demand
-sudo systemctl mask gpu-manager.service
-```
+  ```bash
+  sudo prime-select on-demand
+  sudo systemctl mask gpu-manager.service
+  ```
 
-**Debian Black Screen on Nvidia Mode**
+- **Debian Black Screen on Nvidia Mode**</br>
 If you face a black screen upon login, Debian might need an explicit X11 screen refresh. Add this to your user session:
-```bash
-echo "xrandr --auto" >> ~/.xsessionrc
-```
+  ```bash
+  echo "xrandr --auto" >> ~/.xsessionrc
+  ```
 
-**Display runs at 1 FPS when lid is closed on Hybrid Mode**
+- **Wayland session is missing on Gnome 43+**</br>
+GDM now requires `NVreg_PreserveVideoMemoryAllocations` kernel parameter which breaks sleep in nvidia and hybrid mode, as well as rtd3 in hybrid mode, so EnvyControl disables it, if you need a Wayland session follow the instructions below:
+
+  ```bash
+  sudo systemctl enable nvidia-{suspend,resume,hibernate}
+  sudo ln -s /dev/null /etc/udev/rules.d/61-gdm.rules
+  ```
+
+- **Display runs at 1 FPS when lid is closed on Hybrid Mode**</br>
 This is a known bug with the proprietary Nvidia Linux drivers and Xorg PRIME implementation. There is no magic fix from EnvyControl's side. You can try disabling DRI3 by adding `LIBGL_DRI3_DISABLE=true` to your `/etc/environment`, but mileage may vary.
 
-**How do I completely uninstall and revert to defaults?**
+- **How do I completely uninstall and revert to defaults?**</br>
 EnvyControl features a built-in total reset command. This safely removes all generated Udev, Modprobe, and Xorg configurations and rebuilds your initramfs to factory defaults.
-```bash
-sudo envycontrol --reset
-```
+  ```bash
+  sudo envycontrol --reset
+  ```
 
 ---
 
