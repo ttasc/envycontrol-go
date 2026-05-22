@@ -14,39 +14,16 @@ import (
 func SwitchMode(targetMode string, opts SwitchOptions) {
 	fmt.Printf("Switching to %s mode\n", targetMode)
 
+	// UX Print
 	if targetMode == "hybrid" {
 		rtd3Str := "False"
 		if opts.Rtd3Value != nil {
 			rtd3Str = fmt.Sprintf("%d", *opts.Rtd3Value)
 		}
 		fmt.Printf("Enable PCI-Express Runtime D3 (RTD3) Power Management: %s\n", rtd3Str)
-	} else if targetMode == "nvidia" {
-		forceCompStr := "False"
-		if opts.ForceComp {
-			forceCompStr = "True"
-		}
-		coolbitsStr := "False"
-		if opts.CoolbitsValue != nil {
-			coolbitsStr = fmt.Sprintf("%d", *opts.CoolbitsValue)
-		}
-		fmt.Printf("Enable ForceCompositionPipeline: %s\n", forceCompStr)
-		fmt.Printf("Enable Coolbits: %s\n", coolbitsStr)
 	}
 
 	state := LoadState()
-
-	// Pre-flight: Handle persistent SDDM backups
-	if targetMode == "integrated" || targetMode == "hybrid" {
-		RestoreSddmXsetup()
-	} else if targetMode == "nvidia" {
-		dm := opts.DisplayManager
-		if dm == "" {
-			dm = ProbeDisplayManager()
-		}
-		if dm == "sddm" {
-			BackupSddmXsetup()
-		}
-	}
 
 	// Toggle the persistence daemon
 	ctxBg := context.Background()
@@ -130,17 +107,14 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 func ResetSystem() {
 	fmt.Println("Reverting changes made by EnvyControl...")
 
-	RestoreSddmXsetup()
-
 	// A plan with empty ToCreate forces a safe, fully-backed-up deletion
 	plan := TransactionPlan{
 		ToRemove: []string{
-			BlacklistPath, UdevIntegratedPath, UdevPmPath,
-			XorgPath, ExtraXorgPath, ModesetPath,
-			LightdmScriptPath, LightdmConfigPath,
-			"/etc/X11/xorg.conf.d/90-nvidia.conf",
-			"/lib/udev/rules.d/50-remove-nvidia.rules",
-			"/lib/udev/rules.d/80-nvidia-pm.rules",
+			BlacklistPath,
+			UdevIntegratedPath,
+			UdevPmPath,
+			XorgPath,
+			ModesetPath,
 		},
 		ToCreate: []FileConfig{},
 	}
@@ -183,32 +157,6 @@ func ResetSystem() {
 	}
 
 	signal.Stop(ignoreChan)
-
-	fmt.Println("Operation completed successfully")
-}
-
-// ResetSddm isolates the recovery of the SDDM Xsetup script.
-func ResetSddm() {
-	fmt.Println("Restoring default Xsetup file...")
-
-	plan := TransactionPlan{
-		ToRemove: []string{},
-		ToCreate: []FileConfig{{Path: SddmXsetupPath, Content: SddmXsetupContent, Executable: true}},
-	}
-
-	// Protect file I/O
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	_, err := ExecuteTransaction(plan)
-	if err != nil {
-		if ctx.Err() == context.Canceled {
-			LogError("Reset SDDM was interrupted by user.")
-		} else {
-			LogError("Reset SDDM failed: %v", err)
-		}
-		os.Exit(1)
-	}
 
 	fmt.Println("Operation completed successfully")
 }

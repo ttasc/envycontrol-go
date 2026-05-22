@@ -2,18 +2,9 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
-)
-
-// Pre-compiled regular expressions for performance
-var (
-	dmRegex  = regexp.MustCompile(`ExecStart=(.+)`)
-	amdRegex = regexp.MustCompile(`(name:).*(ATI*|AMD*|AMD/ATI)*`)
 )
 
 // ProbeNvidiaPciBus executes 'lspci' and parses its output to find the Nvidia
@@ -85,56 +76,4 @@ func ProbeIgpuVendor() string {
 		}
 	}
 	return ""
-}
-
-// ProbeDisplayManager reads the systemd display-manager service configuration
-// to automatically detect the running display manager (e.g., sddm, gdm3).
-func ProbeDisplayManager() string {
-	content, err := os.ReadFile("/etc/systemd/system/display-manager.service")
-	if err != nil {
-		return ""
-	}
-
-	match := dmRegex.FindStringSubmatch(string(content))
-	if len(match) > 1 {
-		// Split by fields to remove command-line arguments (e.g., "/usr/bin/sddm --debug")
-		parts := strings.Fields(match[1])
-		if len(parts) > 0 {
-			return filepath.Base(parts[0])
-		}
-	}
-	return ""
-}
-
-// ProbeAmdIgpuName invokes xrandr to extract the exact provider name for AMD iGPUs.
-// This is necessary because AMD provider names vary across driver versions.
-func ProbeAmdIgpuName() string {
-	if _, err := os.Stat("/usr/bin/xrandr"); os.IsNotExist(err) {
-		return ""
-	}
-
-	out, _ := exec.Command("xrandr", "--listproviders").Output()
-	match := amdRegex.FindString(string(out))
-
-	if match != "" && len(match) > 5 {
-		// Strip the "name:" prefix (5 characters)
-		return match[5:]
-	}
-	return ""
-}
-
-// GenerateXrandrScript prepares the xrandr setup script string needed
-// to route Nvidia GPU output through the integrated GPU.
-func GenerateXrandrScript(igpuVendor string) string {
-	if igpuVendor == "intel" {
-		return fmt.Sprintf(NvidiaXrandrScript, "modesetting")
-	} else if igpuVendor == "amd" {
-		amdIgpuName := ProbeAmdIgpuName()
-		if amdIgpuName != "" {
-			return fmt.Sprintf(NvidiaXrandrScript, amdIgpuName)
-		}
-	}
-
-	// Fallback to modesetting
-	return fmt.Sprintf(NvidiaXrandrScript, "modesetting")
 }

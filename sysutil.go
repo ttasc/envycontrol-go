@@ -54,7 +54,6 @@ func RunCommand(ctx context.Context, quiet bool, name string, args ...string) (i
 
 	// Isolate the child process from the terminal's process group.
 	// This prevents terminal signals (like Ctrl+C/SIGINT) from reaching the child directly.
-	// The child will only be killed if Go explicitly cancels the context.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if Verbose && !quiet {
@@ -125,7 +124,6 @@ func RebuildInitramfs(ctx context.Context) error {
 
 	exitCode, err := RunCommand(ctx, !Verbose, command[0], command[1:]...)
 	if err != nil {
-		// Identify if the failure was due to user/system interruption
 		if ctx.Err() == context.Canceled {
 			return fmt.Errorf("initramfs rebuild was interrupted by user/system")
 		}
@@ -134,47 +132,4 @@ func RebuildInitramfs(ctx context.Context) error {
 
 	fmt.Println("Successfully rebuilt the initramfs!")
 	return nil
-}
-
-// BackupSddmXsetup creates a persistent backup of the original SDDM Xsetup script.
-// It will never overwrite an existing backup, ensuring the vanilla file is protected.
-func BackupSddmXsetup() {
-	bakPath := SddmXsetupPath + ".bak"
-
-	// Skip if original file doesn't exist
-	if _, err := os.Stat(SddmXsetupPath); os.IsNotExist(err) {
-		return
-	}
-
-	// Skip if backup already exists to prevent overwriting with a tampered file
-	if _, err := os.Stat(bakPath); err == nil {
-		return
-	}
-
-	if content, err := os.ReadFile(SddmXsetupPath); err == nil {
-		if err := os.WriteFile(bakPath, content, 0755); err == nil {
-			LogDebug("Created persistent backup for SDDM Xsetup at %s", bakPath)
-		} else {
-			LogWarning("Failed to create SDDM backup: %v", err)
-		}
-	}
-}
-
-// RestoreSddmXsetup restores the vanilla Xsetup file from the persistent backup,
-// cleaning up the backup file afterward.
-func RestoreSddmXsetup() {
-	bakPath := SddmXsetupPath + ".bak"
-
-	if _, err := os.Stat(bakPath); os.IsNotExist(err) {
-		return
-	}
-
-	if content, err := os.ReadFile(bakPath); err == nil {
-		if err := os.WriteFile(SddmXsetupPath, content, 0755); err == nil {
-			os.Remove(bakPath)
-			LogInfo("Restored original SDDM Xsetup file")
-		} else {
-			LogError("Failed to restore SDDM Xsetup file: %v", err)
-		}
-	}
 }

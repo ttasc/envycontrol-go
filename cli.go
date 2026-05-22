@@ -9,50 +9,37 @@ import (
 
 // CliOptions represents all possible parsed command-line arguments.
 type CliOptions struct {
-	Query            bool
-	Switch           string
-	Dm               string
-	ForceComp        bool
-	Coolbits         *int
-	Rtd3             *int
-	UseNvidiaCurrent bool
-	ResetSddm        bool
-	Reset            bool
-	StateCreate      bool
-	StateDelete      bool
-	StateQuery       bool
+	Query  bool
+	Switch string
+	Rtd3   *int
+	Reset  bool
 }
 
-// printHelp outputs the application usage text, preserving the exact wording
-// of the original Python application.
+// printHelp outputs the application usage text.
 func printHelp() {
-	helpText := `usage: envycontrol [-h] [-v] [-q] [-s MODE] [--dm DISPLAY_MANAGER] [--force-comp] [--coolbits [VALUE]] [--rtd3 [VALUE]] [--use-nvidia-current] [--reset-sddm] [--reset] [--verbose]
+	helpText := `usage: envycontrol [-h] [-v] [-q] [-s MODE] [--rtd3 [VALUE]] [--reset] [--verbose]
+
+A minimalist tool for GPU power management on Nvidia Optimus systems.
 
 options:
-  -h, --help            show this help message and exit
-  -v, --version         Output the current version
-  -q, --query           Query the current graphics mode
-  -s MODE, --switch MODE
-                        Switch the graphics mode. Available choices: integrated, hybrid, nvidia
-  --dm DISPLAY_MANAGER  Manually specify your Display Manager for Nvidia mode. Available choices: gdm, gdm3, sddm, lightdm
-  --force-comp          Enable ForceCompositionPipeline on Nvidia mode
-  --coolbits [VALUE]    Enable Coolbits on Nvidia mode. Default if specified: 28
-  --rtd3 [VALUE]        Setup PCI-Express Runtime D3 (RTD3) Power Management on Hybrid mode. Available choices: 0, 1, 2, 3. Default if specified: 2
-  --use-nvidia-current  Use nvidia-current instead of nvidia for kernel modules
-  --reset-sddm          Restore default Xsetup file
-  --reset               Revert changes made by EnvyControl
-  --verbose             Enable verbose mode
+  -h, --help        Show this help message and exit
+  -v, --version     Output the current version
+  -q, --query       Query the current graphics mode
+  -s, --switch      Switch the graphics mode. Available choices: integrated, hybrid, nvidia
+  --rtd3 [VALUE]    Setup PCI-Express Runtime D3 Power Management on Hybrid mode.
+                    Available choices: 0, 1, 2, 3. Default if specified: 2
+  --reset           Revert all changes and restore system defaults
+  --verbose         Enable debug logs and system command outputs
 
-Legacy options:
-  --cache-create        Force create internal state file (hybrid mode only)
-  --cache-delete        Delete internal state file
-  --cache-query         Show internal state file
+environment variables:
+  NV_MODULE         Override the target Nvidia kernel module name.
+                    Useful for distros using non-standard names.
+                    Default: "nvidia" (e.g., export NV_MODULE="nvidia-current")
 `
 	fmt.Print(helpText)
 }
 
 // ParseArgs converts raw command-line arguments into a populated CliOptions struct.
-// It implements a bespoke parser to handle optional values exactly like Python's argparse (nargs='?').
 func ParseArgs(args []string) CliOptions {
 	if len(args) == 1 {
 		printHelp()
@@ -84,27 +71,8 @@ func ParseArgs(args []string) CliOptions {
 			opts.Switch = val
 			i++
 
-		case "--dm":
-			val, consumed := parseOptionalString(args, i)
-			if consumed {
-				opts.Dm = val
-				i++
-			}
-
-		case "--force-comp":
-			opts.ForceComp = true
-
-		case "--coolbits":
-			val := 28 // Default if specified but no value provided
-			parsed, consumed := parseOptionalInt(args, i)
-			if consumed {
-				val = parsed
-				i++
-			}
-			opts.Coolbits = &val
-
 		case "--rtd3":
-			val := 2 // Default if specified but no value provided
+			val := 2 // Default if flag is provided without a specific number
 			parsed, consumed := parseOptionalInt(args, i)
 			if consumed {
 				val = parsed
@@ -112,23 +80,8 @@ func ParseArgs(args []string) CliOptions {
 			}
 			opts.Rtd3 = &val
 
-		case "--use-nvidia-current":
-			opts.UseNvidiaCurrent = true
-
-		case "--reset-sddm":
-			opts.ResetSddm = true
-
 		case "--reset":
 			opts.Reset = true
-
-		case "--cache-create":
-			opts.StateCreate = true
-
-		case "--cache-delete":
-			opts.StateDelete = true
-
-		case "--cache-query":
-			opts.StateQuery = true
 
 		case "--verbose":
 			Verbose = true
@@ -167,11 +120,6 @@ func parseOptionalInt(args []string, currentIndex int) (int, bool) {
 func validateOptions(opts *CliOptions) {
 	if opts.Switch != "" && !containsStr(SupportedModes, opts.Switch) {
 		LogError("argument -s/--switch: invalid choice: '%s'", opts.Switch)
-		os.Exit(1)
-	}
-
-	if opts.Dm != "" && !containsStr(SupportedDisplayManagers, opts.Dm) {
-		LogError("argument --dm: invalid choice: '%s'", opts.Dm)
 		os.Exit(1)
 	}
 

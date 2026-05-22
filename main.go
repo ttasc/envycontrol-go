@@ -18,17 +18,8 @@ func main() {
 		return
 	}
 
-	if opts.StateQuery {
-		if content, err := os.ReadFile(StateFilePath); err == nil {
-			fmt.Print(string(content))
-		} else {
-			fmt.Printf("ERROR: Could not read %s\n", StateFilePath)
-		}
-		return
-	}
-
 	// Exit early if no mutating flags were passed
-	if opts.Switch == "" && !opts.Reset && !opts.ResetSddm && !opts.StateCreate && !opts.StateDelete {
+	if opts.Switch == "" && !opts.Reset {
 		return
 	}
 
@@ -36,39 +27,19 @@ func main() {
 
 	AssertRoot()
 
-	// Handle Legacy State File overrides
-	if opts.StateCreate {
-		state := RebuildState()
-		if state.CurrentMode != "hybrid" {
-			LogError("--cache-create requires that the system be in the hybrid Optimus mode")
-			os.Exit(1)
-		}
-		SaveState(state)
-		LogInfo("State file forcefully created")
-		return
-	}
-
-	if opts.StateDelete {
-		os.Remove(StateFilePath)
-		LogInfo("Removed state file")
-		return
+	// Capture the environment variable for custom kernel module names
+	nvModule := os.Getenv("NV_MODULE")
+	if nvModule == "" {
+		nvModule = "nvidia" // Default to standard module name
 	}
 
 	// Handle Primary Orchestrator Routing
 	if opts.Switch != "" {
 		switchOpts := SwitchOptions{
-			DisplayManager:   opts.Dm,
-			ForceComp:        opts.ForceComp,
-			CoolbitsValue:    opts.Coolbits,
-			Rtd3Value:        opts.Rtd3,
-			UseNvidiaCurrent: opts.UseNvidiaCurrent,
+			NvidiaModule: nvModule,
+			Rtd3Value:    opts.Rtd3,
 		}
 		SwitchMode(opts.Switch, switchOpts)
-		return
-	}
-
-	if opts.ResetSddm {
-		ResetSddm()
 		return
 	}
 

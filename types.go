@@ -1,13 +1,10 @@
 package main
 
-// SwitchOptions contains the user-provided configuration flags and overrides
-// passed through the CLI.
+// SwitchOptions contains the configuration flags and environment overrides
+// required for transitioning graphics modes.
 type SwitchOptions struct {
-	DisplayManager   string // Manually specified display manager (e.g., sddm, gdm)
-	ForceComp        bool   // Flag to enable ForceCompositionPipeline in Nvidia mode
-	CoolbitsValue    *int   // Optional Coolbits integer value for GPU overclocking/fan control
-	Rtd3Value        *int   // Optional Runtime D3 power management level for Hybrid mode
-	UseNvidiaCurrent bool   // Flag to use 'nvidia-current' module names (mostly for Debian)
+	NvidiaModule string // Target kernel module name (e.g., "nvidia", "nvidia-current")
+	Rtd3Value    *int   // Optional Runtime D3 power management level (0, 1, 2, 3)
 }
 
 // SystemState represents the actual, persistent hardware and software state
