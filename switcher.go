@@ -102,7 +102,9 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 			LogWarning("System configs safely rolled back.")
 			LogWarning("Attempting to rebuild initramfs for the rolled-back state...")
 			// Best-effort attempt to sync the kernel image back to the safe config
-			RebuildInitramfs(context.Background())
+			if rebuildErr := RebuildInitramfs(context.Background()); rebuildErr != nil {
+				LogWarning("Fallback initramfs rebuild also failed: %v", rebuildErr)
+			}
 		}
 		os.Exit(1)
 	}
@@ -164,7 +166,9 @@ func ResetSystem() {
 		} else {
 			LogWarning("System configs safely rolled back.")
 			LogWarning("Attempting to rebuild initramfs for the rolled-back state...")
-			RebuildInitramfs(context.Background())
+			if rebuildErr := RebuildInitramfs(context.Background()); rebuildErr != nil {
+				LogWarning("Fallback initramfs rebuild also failed: %v", rebuildErr)
+			}
 		}
 		os.Exit(1)
 	}

@@ -13,8 +13,12 @@ func createFakePCIDevice(t *testing.T, baseDir, devID, vendorID, classID string)
 	if err := os.MkdirAll(devDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(devDir, "vendor"), []byte(vendorID+"\n"), 0644)
-	os.WriteFile(filepath.Join(devDir, "class"), []byte(classID+"\n"), 0644)
+	if err := os.WriteFile(filepath.Join(devDir, "vendor"), []byte(vendorID+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(devDir, "class"), []byte(classID+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestProbeNvidiaPciBus(t *testing.T) {
@@ -64,7 +68,9 @@ func TestProbeIgpuVendor(t *testing.T) {
 
 	// Reset and test AMD
 	os.RemoveAll(tmpDir)
-	os.MkdirAll(tmpDir, 0755)
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	createFakePCIDevice(t, tmpDir, "0000:04:00.0", "0x1002", "0x030000") // AMD
 
 	vendor = ProbeIgpuVendor()
@@ -88,8 +94,12 @@ func TestGuessCurrentMode(t *testing.T) {
 	}
 
 	// Simulate Integrated
-	os.WriteFile(BlacklistPath, []byte(""), 0644)
-	os.WriteFile(UdevIntegratedPath, []byte(""), 0644)
+	if err := os.WriteFile(BlacklistPath, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(UdevIntegratedPath, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
 	if mode := GuessCurrentMode(); mode != "integrated" {
 		t.Errorf("Expected integrated, got %s", mode)
 	}
@@ -99,8 +109,12 @@ func TestGuessCurrentMode(t *testing.T) {
 	os.MkdirAll(tmpDir, 0755)
 
 	// Simulate Nvidia
-	os.WriteFile(XorgPath, []byte(""), 0644)
-	os.WriteFile(ModesetPath, []byte(""), 0644)
+	if err := os.WriteFile(XorgPath, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ModesetPath, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
 	if mode := GuessCurrentMode(); mode != "nvidia" {
 		t.Errorf("Expected nvidia, got %s", mode)
 	}

@@ -101,5 +101,7 @@ func TestExecuteTransaction_AtomicFailureTriggersRollback(t *testing.T) {
 	}
 
 	// Fix permission to allow temp dir cleanup by Go
-	os.Chmod(badFileDir, 0755)
+	if err := os.Chmod(badFileDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 }

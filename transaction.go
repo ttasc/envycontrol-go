@@ -101,7 +101,9 @@ func createBackup(plan TransactionPlan) error {
 		pathsToBackup[p.Path] = true
 	}
 
-	os.MkdirAll(filepath.Dir(BackupFilePath), 0755)
+	if err := os.MkdirAll(filepath.Dir(BackupFilePath), 0755); err != nil {
+		return fmt.Errorf("failed to create backup directory: %v", err)
+	}
 
 	backupFile, err := os.Create(BackupFilePath)
 	if err != nil {
