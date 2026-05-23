@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: RTFM (Read The F***ing Manual)
+    url: https://github.com/ttasc/envycontrol-go#readme
+    about: Read the documentation, architecture notes, and DIY guide before opening an issue.

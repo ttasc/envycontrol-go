@@ -1,0 +1,26 @@
+name: Feature Request
+description: Propose an enhancement that respects the minimal design.
+title: "[Feature]: <Feature name>"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **WARNING:**
+        We follow the Unix philosophy. Features adding bloat, dependencies, UI-layer hacks, or Display Manager automations will be immediately rejected. Keep it minimal, stateless, and focused.
+
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Rationale
+      description: Why is this strictly necessary for the tool's core purpose? What technical problem does it solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Proposed Implementation
+      description: How should this be implemented in Go without adding state or dependencies? (Mention specific files/functions if possible).
+    validations:
+      required: true

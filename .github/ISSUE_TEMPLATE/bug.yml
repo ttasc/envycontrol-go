@@ -1,0 +1,57 @@
+name: Bug Report
+description: The tool failed or broke system states.
+title: "[Bug]: <Short description>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **READ BEFORE POSTING:**
+        This tool handles PCIe routing, module blacklisting, and RTD3. It DOES NOT touch your Display Manager or UI. If your screen is black because you failed to write a proper `xorg.conf` or Xsetup script, RTFM (read the "Do-It-Yourself" guide).
+        Only proceed if `envycontrol` itself is failing, crashing, or writing incorrect kernel/udev states.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Technical Description
+      description: What exactly is broken at the hardware/system level?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction
+      description: Exact commands executed.
+      placeholder: |
+        1. sudo envycontrol -s nvidia
+        2. reboot
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: "Format: EnvyControl version / OS / Kernel / Nvidia Driver"
+      placeholder: "e.g., 1.0.0 / Arch Linux / 6.8.9-arch1-1 / 550.78"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Verbose Output
+      description: Paste the exact output of your command with the `--verbose` flag. No screenshots.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+      description: CPU and Nvidia GPU model.
+      placeholder: "Intel i7-12700H, RTX 3060"
+    validations:
+      required: true
