@@ -2,7 +2,6 @@ package main
 
 const (
 	// Version denotes the current application version.
-	// The -mini suffix indicates the minimalist, power-management-only fork.
 	Version = "1.0.0"
 
 	// --- Core Paths ---
