@@ -1,5 +1,12 @@
 # 👁‍🗨 EnvyControl
 
+[![CI](https://github.com/ttasc/envycontrol-go/actions/workflows/ci.yml/badge.svg)](https://github.com/ttasc/envycontrol-go/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ttasc/envycontrol-go?color=success)](https://github.com/ttasc/envycontrol-go/releases/latest)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ttasc/envycontrol-go)](https://go.dev/)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ttasc/envycontrol-go)](https://goreportcard.com/report/github.com/ttasc/envycontrol-go)
+[![Platform](https://img.shields.io/badge/Platform-Linux-blue)](https://www.kernel.org/)
+[![License: MIT](https://img.shields.io/github/license/ttasc/envycontrol-go)](https://github.com/ttasc/envycontrol-go/blob/main/LICENSE)
+
 > **A minimalist, fail-safe CLI tool for GPU mode switching and power management on Nvidia Optimus Linux laptops.**
 
 ---
