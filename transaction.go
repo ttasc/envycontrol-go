@@ -197,7 +197,9 @@ func RollbackTransaction(createdFiles []string) error {
 		}
 
 		// Recreate parent directories in case they were lost
-		os.MkdirAll(filepath.Dir(targetPath), 0755)
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+			return fmt.Errorf("failed to create %s's parent directory: %v", targetPath, err)
+		}
 
 		file, err := os.OpenFile(targetPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(header.Mode))
 		if err != nil {

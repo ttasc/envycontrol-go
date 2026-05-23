@@ -106,7 +106,9 @@ func TestGuessCurrentMode(t *testing.T) {
 
 	// Reset
 	os.RemoveAll(tmpDir)
-	os.MkdirAll(tmpDir, 0755)
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	// Simulate Nvidia
 	if err := os.WriteFile(XorgPath, []byte(""), 0644); err != nil {

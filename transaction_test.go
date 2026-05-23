@@ -17,8 +17,12 @@ func TestExecuteAndRollbackTransaction(t *testing.T) {
 	targetFile2 := filepath.Join(tmpDir, "etc", "test-create.conf")
 
 	// Pre-create the file that should be backed up and removed
-	os.MkdirAll(filepath.Dir(targetFile1), 0755)
-	os.WriteFile(targetFile1, []byte("legacy system config"), 0644)
+	if err := os.MkdirAll(filepath.Dir(targetFile1), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetFile1, []byte("legacy system config"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	plan := TransactionPlan{
 		ToRemove: []string{targetFile1},
@@ -72,7 +76,10 @@ func TestExecuteTransaction_AtomicFailureTriggersRollback(t *testing.T) {
 	badFileDir := filepath.Join(tmpDir, "readonly_dir")
 	badFile := filepath.Join(badFileDir, "fail.conf")
 
-	os.MkdirAll(badFileDir, 0500) // Read-only directory to force failure
+	// Read-only directory to force failure
+	if err := os.MkdirAll(badFileDir, 0500); err != nil {
+		t.Fatal(err)
+	}
 
 	plan := TransactionPlan{
 		ToRemove: []string{},

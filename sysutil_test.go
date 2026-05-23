@@ -18,7 +18,9 @@ ID=fedora
 ID_LIKE="rhel centos suse"
 VERSION_ID="38"`
 
-	os.WriteFile(OsReleasePath, []byte(fedoraContent), 0644)
+	if err := os.WriteFile(OsReleasePath, []byte(fedoraContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	id, idLike := parseOSRelease()
 	if id != "fedora" {
