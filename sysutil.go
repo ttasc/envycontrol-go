@@ -13,6 +13,9 @@ import (
 // Verbose controls whether debug logs and command outputs are printed.
 var Verbose bool
 
+// For mocking while testing parseOSRelease
+var OsReleasePath = "/etc/os-release"
+
 // --- Logging Utilities ---
 
 // LogInfo prints a standard informational message.
@@ -82,7 +85,7 @@ func RunCommand(ctx context.Context, quiet bool, name string, args ...string) (i
 
 // parseOSRelease parses /etc/os-release to identify the Linux distribution safely.
 func parseOSRelease() (id string, idLike string) {
-	data, err := os.ReadFile("/etc/os-release")
+	data, err := os.ReadFile(OsReleasePath)
 	if err != nil {
 		data, err = os.ReadFile("/usr/lib/os-release") // Fallback
 		if err != nil {
@@ -105,39 +108,18 @@ func parseOSRelease() (id string, idLike string) {
 // RebuildInitramfs determines the current Linux distribution and invokes the
 // correct tool to regenerate the initramfs. It respects Context cancellation.
 func RebuildInitramfs(ctx context.Context) error {
-	var command []string
-
 	fileExists := func(p string) bool {
 		_, err := os.Stat(p)
 		return err == nil
 	}
 
-	// 1. Check for Ostree-based immutable systems first
-	if fileExists("/ostree") || fileExists("/sysroot/ostree") {
-		fmt.Println("Rebuilding the initramfs with rpm-ostree...")
-		command = []string{"rpm-ostree", "initramfs", "--enable", "--arg=--force"}
-	} else {
-		// 2. Parse /etc/os-release for standard systems
-		id, idLike := parseOSRelease()
-		osList := id + " " + idLike // Combine to easily search families
+	id, idLike := parseOSRelease()
+	command := getInitramfsCommand(id, idLike, fileExists)
 
-		if strings.Contains(osList, "debian") || strings.Contains(osList, "ubuntu") {
-			command = []string{"update-initramfs", "-u", "-k", "all"}
-		} else if strings.Contains(osList, "fedora") || strings.Contains(osList, "rhel") || strings.Contains(osList, "centos") || strings.Contains(osList, "suse") {
-			command = []string{"dracut", "--force", "--regenerate-all"}
-		} else if strings.Contains(osList, "arch") {
-			if id == "endeavouros" && fileExists("/usr/bin/dracut") {
-				command = []string{"dracut-rebuild"}
-			} else {
-				command = []string{"mkinitcpio", "-P"}
-			}
-		} else if strings.Contains(osList, "altlinux") {
-			command = []string{"make-initrd"}
-		} else {
-			LogWarning("Unsupported distribution (ID: %s). Could not determine initramfs builder.", id)
-			LogWarning("Skipping initramfs rebuild. You may need to update your boot image manually.")
-			return nil
-		}
+	if len(command) == 0 {
+		LogWarning("Unsupported distribution (ID: %s). Could not determine initramfs builder.", id)
+		LogWarning("Skipping initramfs rebuild. You may need to update your boot image manually.")
+		return nil
 	}
 
 	// Wrap with systemd-inhibit to prevent sleep/shutdown during critical build
@@ -158,4 +140,30 @@ func RebuildInitramfs(ctx context.Context) error {
 
 	fmt.Println("Successfully rebuilt the initramfs!")
 	return nil
+}
+
+func getInitramfsCommand(id, idLike string, fileExists func(string) bool) []string {
+	var command []string
+
+	if fileExists("/ostree") || fileExists("/sysroot/ostree") {
+		return []string{"rpm-ostree", "initramfs", "--enable", "--arg=--force"}
+	}
+
+	osList := id + " " + idLike
+
+	if strings.Contains(osList, "debian") || strings.Contains(osList, "ubuntu") {
+		command = []string{"update-initramfs", "-u", "-k", "all"}
+	} else if strings.Contains(osList, "fedora") || strings.Contains(osList, "rhel") || strings.Contains(osList, "centos") || strings.Contains(osList, "suse") {
+		command = []string{"dracut", "--force", "--regenerate-all"}
+	} else if strings.Contains(osList, "arch") {
+		if id == "endeavouros" && fileExists("/usr/bin/dracut") {
+			command = []string{"dracut-rebuild"}
+		} else {
+			command = []string{"mkinitcpio", "-P"}
+		}
+	} else if strings.Contains(osList, "altlinux") {
+		command = []string{"make-initrd"}
+	}
+
+	return command
 }

@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// CliOptions represents all possible parsed command-line arguments.
+// CliOptions represents the parsed configuration derived from command-line arguments.
 type CliOptions struct {
 	Query  bool
 	Switch string
@@ -15,7 +15,8 @@ type CliOptions struct {
 	Reset  bool
 }
 
-// printHelp outputs the application usage text.
+// printHelp prints the application's usage instructions, available options,
+// and environment variables to standard output.
 func printHelp() {
 	helpText := `usage: envycontrol [-h] [-v] [-q] [-s MODE] [--rtd3 [VALUE]] [--reset] [--verbose]
 
@@ -43,25 +44,51 @@ environment variables:
 	fmt.Print(helpText)
 }
 
-// ParseArgs converts raw command-line arguments into a populated CliOptions struct.
+// ParseArgs parses the raw command-line arguments and returns a populated CliOptions.
+// It acts as the primary entry point for CLI evaluation. If an error occurs, or if
+// help/version is requested, it prints the corresponding output and terminates
+// the program via os.Exit.
 func ParseArgs(args []string) CliOptions {
 	if len(args) == 1 {
 		printHelp()
 		os.Exit(1)
 	}
 
+	opts, err := parseArgsInternal(args)
+	if err != nil {
+		if err.Error() == "help requested" {
+			printHelp()
+			os.Exit(0)
+		} else if err.Error() == "version requested" {
+			fmt.Println(Version) // Version is defined in constants.go
+			os.Exit(0)
+		}
+		LogError(err.Error())
+		os.Exit(1)
+	}
+	return opts
+}
+
+// --- Helper Functions ---
+
+// parseArgsInternal encapsulates the core logic for parsing arguments.
+// It is separated from ParseArgs to allow for unit testing without triggering os.Exit.
+func parseArgsInternal(args []string) (CliOptions, error) {
 	var opts CliOptions
+
+	// Return a help request if no arguments are provided (only the binary name)
+	if len(args) <= 1 {
+		return opts, fmt.Errorf("help requested")
+	}
 
 	for i := 1; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
 		case "-h", "--help":
-			printHelp()
-			os.Exit(0)
+			return opts, fmt.Errorf("help requested")
 
 		case "-v", "--version":
-			fmt.Println(Version)
-			os.Exit(0)
+			return opts, fmt.Errorf("version requested")
 
 		case "-q", "--query":
 			opts.Query = true
@@ -69,14 +96,13 @@ func ParseArgs(args []string) CliOptions {
 		case "-s", "--switch":
 			val, consumed := parseOptionalString(args, i)
 			if !consumed {
-				LogError("argument -s/--switch: expected one argument")
-				os.Exit(1)
+				return opts, fmt.Errorf("argument -s/--switch: expected one argument")
 			}
 			opts.Switch = val
 			i++
 
 		case "--rtd3":
-			val := 2 // Default if flag is provided without a specific number
+			val := 2 // Default value if the --rtd3 flag is provided without a specific number
 			parsed, consumed := parseOptionalInt(args, i)
 			if consumed {
 				val = parsed
@@ -88,21 +114,21 @@ func ParseArgs(args []string) CliOptions {
 			opts.Reset = true
 
 		case "--verbose":
-			Verbose = true
+			Verbose = true // Verbose is a global variable declared in sysutil.go
 
 		default:
-			LogError("unrecognized arguments: %s", arg)
-			os.Exit(1)
+			return opts, fmt.Errorf("unrecognized arguments: %s", arg)
 		}
 	}
 
-	validateOptions(&opts)
-	return opts
+	// Validate the constraints on the user input
+	err := validateOptionsInternal(&opts)
+	return opts, err
 }
 
-// --- Helper Functions ---
-
-// parseOptionalString checks if the next argument exists and does not start with a flag indicator ("-").
+// parseOptionalString extracts the next string argument from the list if it exists
+// and does not start with a flag indicator ("-"). It returns the extracted string
+// and a boolean indicating whether the argument was successfully consumed.
 func parseOptionalString(args []string, currentIndex int) (string, bool) {
 	if currentIndex+1 < len(args) && !strings.HasPrefix(args[currentIndex+1], "-") {
 		return args[currentIndex+1], true
@@ -110,7 +136,9 @@ func parseOptionalString(args []string, currentIndex int) (string, bool) {
 	return "", false
 }
 
-// parseOptionalInt acts like parseOptionalString but parses the result into an integer.
+// parseOptionalInt extracts the next argument from the list, attempting to parse it
+// as an integer. It returns the parsed integer and a boolean indicating whether
+// the argument was successfully consumed.
 func parseOptionalInt(args []string, currentIndex int) (int, bool) {
 	if strVal, ok := parseOptionalString(args, currentIndex); ok {
 		if parsedVal, err := strconv.Atoi(strVal); err == nil {
@@ -120,19 +148,19 @@ func parseOptionalInt(args []string, currentIndex int) (int, bool) {
 	return 0, false
 }
 
-// validateOptions enforces constraints on the user input before returning.
-func validateOptions(opts *CliOptions) {
+// validateOptionsInternal verifies that the parsed CLI options contain valid values.
+// It returns an error if unsupported modes or invalid RTD3 values are provided.
+func validateOptionsInternal(opts *CliOptions) error {
 	if opts.Switch != "" && !containsStr(SupportedModes, opts.Switch) {
-		LogError("argument -s/--switch: invalid choice: '%s'", opts.Switch)
-		os.Exit(1)
+		return fmt.Errorf("argument -s/--switch: invalid choice: '%s'", opts.Switch)
 	}
-
 	if opts.Rtd3 != nil && !containsInt(Rtd3Modes, *opts.Rtd3) {
-		LogError("argument --rtd3: invalid choice: %d", *opts.Rtd3)
-		os.Exit(1)
+		return fmt.Errorf("argument --rtd3: invalid choice: %d", *opts.Rtd3)
 	}
+	return nil
 }
 
+// containsStr reports whether the slice contains the specified string.
 func containsStr(slice []string, val string) bool {
 	for _, item := range slice {
 		if item == val {
@@ -142,6 +170,7 @@ func containsStr(slice []string, val string) bool {
 	return false
 }
 
+// containsInt reports whether the slice contains the specified integer.
 func containsInt(slice []int, val int) bool {
 	for _, item := range slice {
 		if item == val {

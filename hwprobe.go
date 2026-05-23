@@ -9,11 +9,12 @@ import (
 )
 
 const (
-	sysfsPciDevicesDir = "/sys/bus/pci/devices"
-	vendorNvidia       = "0x10de"
-	vendorIntel        = "0x8086"
-	vendorAMD          = "0x1002"
+	vendorNvidia = "0x10de"
+	vendorIntel  = "0x8086"
+	vendorAMD    = "0x1002"
 )
+
+var SysfsPciDevicesDir = "/sys/bus/pci/devices"
 
 // readSysfsFile is a helper function to safely read a single-line text file
 // from the Linux SysFS, trimming any trailing whitespace or newlines.
@@ -35,7 +36,7 @@ func isGraphicsClass(class string) bool {
 // It converts the ID from the directory name (Hex) to the Decimal format required by Xorg.
 // Returns an error if the GPU is physically powered off (Integrated mode) or missing.
 func ProbeNvidiaPciBus() (string, error) {
-	entries, err := os.ReadDir(sysfsPciDevicesDir)
+	entries, err := os.ReadDir(SysfsPciDevicesDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to read sysfs PCI directory: %v", err)
 	}
@@ -43,7 +44,7 @@ func ProbeNvidiaPciBus() (string, error) {
 	var pciBusID string
 
 	for _, entry := range entries {
-		devicePath := filepath.Join(sysfsPciDevicesDir, entry.Name())
+		devicePath := filepath.Join(SysfsPciDevicesDir, entry.Name())
 		vendor := readSysfsFile(filepath.Join(devicePath, "vendor"))
 		class := readSysfsFile(filepath.Join(devicePath, "class"))
 
@@ -83,13 +84,13 @@ func ProbeNvidiaPciBus() (string, error) {
 // ProbeIgpuVendor scans the Linux SysFS to determine whether the integrated GPU
 // is an Intel or AMD device.
 func ProbeIgpuVendor() string {
-	entries, err := os.ReadDir(sysfsPciDevicesDir)
+	entries, err := os.ReadDir(SysfsPciDevicesDir)
 	if err != nil {
 		return ""
 	}
 
 	for _, entry := range entries {
-		devicePath := filepath.Join(sysfsPciDevicesDir, entry.Name())
+		devicePath := filepath.Join(SysfsPciDevicesDir, entry.Name())
 		class := readSysfsFile(filepath.Join(devicePath, "class"))
 
 		if isGraphicsClass(class) {
