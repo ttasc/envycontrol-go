@@ -4,7 +4,7 @@ package main
 var (
 	// --- Core Paths ---
 	// BackupFilePath is where the ephemeral rollback archive is stored during transactions.
-	BackupFilePath     = "/var/lib/envycontrol/backup.tar.gz"
+	BackupFilePath = "/var/lib/envycontrol/backup.tar.gz"
 
 	// --- Config Paths ---
 	BlacklistPath      = "/etc/modprobe.d/blacklist-nvidia.conf"

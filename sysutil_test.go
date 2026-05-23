@@ -52,8 +52,12 @@ func TestBuildInitramfsCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Mock the fileExists function closure logic
 			mockFileExists := func(path string) bool {
-				if tt.ostree && path == "/ostree" { return true }
-				if tt.hasDracut && path == "/usr/bin/dracut" { return true }
+				if tt.ostree && path == "/ostree" {
+					return true
+				}
+				if tt.hasDracut && path == "/usr/bin/dracut" {
+					return true
+				}
 				return false
 			}
 
