@@ -19,7 +19,9 @@ func TestFetchLatestRelease_Success(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(mockRelease)
+		if err := json.NewEncoder(w).Encode(mockRelease); err != nil {
+			t.Errorf("Failed to encode mock JSON response: %v", err)
+		}
 	}))
 	defer ts.Close()
 
