@@ -18,12 +18,17 @@ func main() {
 	}
 
 	// Exit early if no mutating flags were passed
-	if opts.Switch == "" && !opts.Reset {
+	if opts.Switch == "" && !opts.Reset && !opts.Update {
 		return
 	}
 
 	// --- Phase 2: Mutating Actions (Root Required) ---
 	AssertRoot()
+
+	if opts.Update {
+		UpdateEnvyControl()
+		return
+	}
 
 	// Capture the environment variable for custom kernel module names
 	nvModule := os.Getenv("NV_MODULE")

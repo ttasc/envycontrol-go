@@ -13,18 +13,20 @@ type CliOptions struct {
 	Switch string
 	Rtd3   *int
 	Reset  bool
+	Update bool // Indicates a request to auto-update the tool
 }
 
 // printHelp prints the application's usage instructions, available options,
 // and environment variables to standard output.
 func printHelp() {
-	helpText := `usage: envycontrol [-h] [-v] [-q] [-s MODE] [--rtd3 [VALUE]] [--reset] [--verbose]
+	helpText := `usage: envycontrol [-h] [-v] [-u] [-q] [-s MODE] [--rtd3 [VALUE]] [--reset] [--verbose]
 
 A minimalist tool for GPU power management on Nvidia Optimus systems.
 
 options:
   -h, --help        Show this help message and exit
   -v, --version     Output the current version
+  -u, --update      Update the tool to the latest version
   -q, --query       Query the current graphics mode
   -s, --switch      Switch the graphics mode. Available choices: integrated, hybrid, nvidia
   --rtd3 [VALUE]    Setup PCI-Express Runtime D3 Power Management on Hybrid mode.
@@ -89,6 +91,9 @@ func parseArgsInternal(args []string) (CliOptions, error) {
 
 		case "-v", "--version":
 			return opts, fmt.Errorf("version requested")
+
+		case "-u", "--update":
+			opts.Update = true
 
 		case "-q", "--query":
 			opts.Query = true

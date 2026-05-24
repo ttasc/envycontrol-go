@@ -122,6 +122,11 @@ Switch to Nvidia mode:
 sudo envycontrol -s nvidia
 ```
 
+Update EnvyControl to the latest version:
+```bash
+sudo envycontrol --update
+```
+
 ### The `NV_MODULE` Environment Variable
 If your distribution uses a non-standard Nvidia kernel module name (e.g., Debian sometimes uses `nvidia-current`), you can pass the `NV_MODULE` environment variable instead of relying on legacy flags:
 
