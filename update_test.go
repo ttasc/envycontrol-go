@@ -50,7 +50,7 @@ func TestFetchLatestRelease_Forbidden(t *testing.T) {
 		t.Fatalf("Expected error for 403 status, got nil")
 	}
 
-	expectedErrStr := "GitHub API rate limit exceeded. Please try updating again later."
+	expectedErrStr := "github API rate limit exceeded. Please try updating again later"
 	if !strings.Contains(err.Error(), expectedErrStr) {
 		t.Errorf("Expected error to contain %q, got %q", expectedErrStr, err.Error())
 	}
