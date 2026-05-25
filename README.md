@@ -72,6 +72,47 @@ make build
 sudo make install
 ```
 
+## ⚙️ Configurations Guide
+
+> [!NOTE]
+> Because EnvyControl now strictly focuses on hardware states, it **does not** configure your Display Manager or X11 tearing fixes. If you require these features in `nvidia` mode, here is how to apply them manually.
+
+### 1. Display Manager Setup (Required for `nvidia` mode)
+To ensure your Display Manager routes the screen correctly when exclusively using the Nvidia GPU, you need to run this `xrandr` script upon login:
+
+```bash
+#!/bin/sh
+[ "$(envycontrol -q)" = "nvidia" ] && xrandr --setprovideroutputsource modesetting NVIDIA-0
+xrandr --auto
+```
+
+**Where to put it:**
+*   **SDDM (KDE):** Append the script to `/usr/share/sddm/scripts/Xsetup`.
+*   **LightDM:** Save the script to `/etc/lightdm/nvidia.sh`, make it executable, and add `display-setup-script=/etc/lightdm/nvidia.sh` to your `/etc/lightdm/lightdm.conf` under the `[Seat:*]` section.
+*   **GDM (GNOME):** GDM heavily favors Wayland now. If you force X11, you may need to place the script in `/etc/gdm3/Init/Default`. However, Wayland usually handles Nvidia routing natively without `xrandr` hacks.
+*   **startx / Window Managers:** Simply add the commands to your `~/.xinitrc` before executing your WM.
+
+### 2. X11 Hacks (Overclocking & Tearing Fixes)
+If you experience screen tearing on X11 or want to enable GPU overclocking (Coolbits), create a custom Xorg configuration file:
+
+```bash
+sudo nano /etc/X11/xorg.conf.d/20-nvidia-hacks.conf
+```
+
+Paste the following block (adjust `Coolbits` value as needed for your specific use case):
+
+```text
+Section "OutputClass"
+    Identifier "nvidia-hacks"
+    MatchDriver "nvidia-drm"
+    Driver "nvidia"
+    Option "ForceCompositionPipeline" "true"
+    Option "Coolbits" "28"
+EndSection
+```
+
+---
+
 ### 🗑️ Uninstallation
 
 Do **not** just delete the binary manually. The system needs to revert the configurations and safely rebuild your boot image (`initramfs`) to avoid a black screen on the next boot.
@@ -132,46 +173,6 @@ If your distribution uses a non-standard Nvidia kernel module name (e.g., Debian
 
 ```bash
 sudo NV_MODULE="nvidia-current" envycontrol -s nvidia
-```
-
----
-
-## 🛠️ The "Do-It-Yourself" Guide (Manual Configurations)
-
-Because EnvyControl now strictly focuses on hardware states, it **does not** configure your Display Manager or X11 tearing fixes. If you require these features in `nvidia` mode, here is how to apply them manually.
-
-### 1. Display Manager Setup (For `nvidia` mode)
-To ensure your Display Manager routes the screen correctly when exclusively using the Nvidia GPU, you need to run this `xrandr` script upon login:
-
-```bash
-#!/bin/sh
-[ "$(envycontrol -q)" = "nvidia" ] && xrandr --setprovideroutputsource modesetting NVIDIA-0
-xrandr --auto
-```
-
-**Where to put it:**
-*   **SDDM (KDE):** Append the script to `/usr/share/sddm/scripts/Xsetup`.
-*   **LightDM:** Save the script to `/etc/lightdm/nvidia.sh`, make it executable, and add `display-setup-script=/etc/lightdm/nvidia.sh` to your `/etc/lightdm/lightdm.conf` under the `[Seat:*]` section.
-*   **GDM (GNOME):** GDM heavily favors Wayland now. If you force X11, you may need to place the script in `/etc/gdm3/Init/Default`. However, Wayland usually handles Nvidia routing natively without `xrandr` hacks.
-*   **startx / Window Managers:** Simply add the commands to your `~/.xinitrc` before executing your WM.
-
-### 2. X11 Hacks (Overclocking & Tearing Fixes)
-If you experience screen tearing on X11 or want to enable GPU overclocking (Coolbits), create a custom Xorg configuration file:
-
-```bash
-sudo nano /etc/X11/xorg.conf.d/20-nvidia-hacks.conf
-```
-
-Paste the following block (adjust `Coolbits` value as needed for your specific use case):
-
-```text
-Section "OutputClass"
-    Identifier "nvidia-hacks"
-    MatchDriver "nvidia-drm"
-    Driver "nvidia"
-    Option "ForceCompositionPipeline" "true"
-    Option "Coolbits" "28"
-EndSection
 ```
 
 ---
