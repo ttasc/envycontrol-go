@@ -128,16 +128,21 @@ sudo rm -rf /var/lib/envycontrol
 ```
 *(If you kept the source code folder, you can also just run `sudo make uninstall` which automates these steps).*
 
-> The below files are created by envycontrol, and you may want to remove them manually if they are not removed automatically to avoid any incorrect system behaviour:
-> 1. System configuration files:
->   - `/etc/modprobe.d/blacklist-nvidia.conf`
->   - `/etc/udev/rules.d/50-remove-nvidia.rules`
->   - `/etc/udev/rules.d/80-nvidia-pm.rules`
->   - `/etc/X11/xorg.conf`
->   - `/etc/modprobe.d/nvidia.conf`
->
-> 2. EnvyControl's own storage directory (Go version):
->   - `/var/lib/envycontrol/` *(Contains the Transaction Engine backup.tar.gz file).*
+<details>
+  <summary> Or you can manually remove them (click to expand)</summary>
+
+  ```bash
+  # 1. System configuration files:
+  /etc/modprobe.d/blacklist-nvidia.conf
+  /etc/udev/rules.d/50-remove-nvidia.rules
+  /etc/udev/rules.d/80-nvidia-pm.rules
+  /etc/X11/xorg.conf
+  /etc/modprobe.d/nvidia.conf
+
+  # 2. EnvyControl's own storage directory (Go version):
+  /var/lib/envycontrol/ # (Contains the Transaction Engine backup.tar.gz file).
+  ```
+</details>
 
 ---
 
