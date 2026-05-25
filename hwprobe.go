@@ -55,7 +55,7 @@ func ProbeNvidiaPciBus() (string, error) {
 	}
 
 	if pciBusID == "" {
-		return "", fmt.Errorf("Nvidia GPU not found on PCI bus (might be powered off)")
+		return "", fmt.Errorf("nvidia GPU not found on PCI bus (might be powered off)")
 	}
 
 	// Safely split and convert Hex values (Domain:Bus:Device.Function) to Decimal
@@ -95,9 +95,10 @@ func ProbeIgpuVendor() string {
 
 		if isGraphicsClass(class) {
 			vendor := readSysfsFile(filepath.Join(devicePath, "vendor"))
-			if vendor == vendorIntel {
+			switch vendor {
+			case vendorIntel:
 				return "intel"
-			} else if vendor == vendorAMD {
+			case vendorAMD:
 				return "amd"
 			}
 		}

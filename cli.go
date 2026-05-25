@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -156,31 +157,11 @@ func parseOptionalInt(args []string, currentIndex int) (int, bool) {
 // validateOptionsInternal verifies that the parsed CLI options contain valid values.
 // It returns an error if unsupported modes or invalid RTD3 values are provided.
 func validateOptionsInternal(opts *CliOptions) error {
-	if opts.Switch != "" && !containsStr(SupportedModes, opts.Switch) {
+	if opts.Switch != "" && !slices.Contains(SupportedModes, opts.Switch) {
 		return fmt.Errorf("argument -s/--switch: invalid choice: '%s'", opts.Switch)
 	}
-	if opts.Rtd3 != nil && !containsInt(Rtd3Modes, *opts.Rtd3) {
+	if opts.Rtd3 != nil && !slices.Contains(Rtd3Modes, *opts.Rtd3) {
 		return fmt.Errorf("argument --rtd3: invalid choice: %d", *opts.Rtd3)
 	}
 	return nil
-}
-
-// containsStr reports whether the slice contains the specified string.
-func containsStr(slice []string, val string) bool {
-	for _, item := range slice {
-		if item == val {
-			return true
-		}
-	}
-	return false
-}
-
-// containsInt reports whether the slice contains the specified integer.
-func containsInt(slice []int, val int) bool {
-	for _, item := range slice {
-		if item == val {
-			return true
-		}
-	}
-	return false
 }

@@ -19,22 +19,22 @@ var OsReleasePath = "/etc/os-release"
 // --- Logging Utilities ---
 
 // LogInfo prints a standard informational message.
-func LogInfo(format string, a ...interface{}) {
+func LogInfo(format string, a ...any) {
 	fmt.Printf("INFO: "+format+"\n", a...)
 }
 
 // LogWarning prints a non-fatal warning message.
-func LogWarning(format string, a ...interface{}) {
+func LogWarning(format string, a ...any) {
 	fmt.Printf("WARNING: "+format+"\n", a...)
 }
 
 // LogError prints an error message.
-func LogError(format string, a ...interface{}) {
-	fmt.Printf("ERROR: "+format+"\n", a...)
+func LogError(format string, a ...any) {
+	fmt.Fprintf(os.Stderr, "ERROR: "+format+"\n", a...)
 }
 
 // LogDebug prints a debug message if the Verbose flag is enabled.
-func LogDebug(format string, a ...interface{}) {
+func LogDebug(format string, a ...any) {
 	if Verbose {
 		fmt.Printf("DEBUG: "+format+"\n", a...)
 	}
@@ -93,8 +93,8 @@ func parseOSRelease() (id string, idLike string) {
 		}
 	}
 
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(data), "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "ID=") {
 			id = strings.Trim(line[3:], `"'`)
@@ -128,7 +128,7 @@ func RebuildInitramfs(ctx context.Context) error {
 		command = append(wrapped, command...)
 	}
 
-	fmt.Println("Rebuilding the initramfs. DO NOT TURN OFF YOUR COMPUTER...")
+	LogInfo("Rebuilding the initramfs. DO NOT TURN OFF YOUR COMPUTER...")
 
 	exitCode, err := RunCommand(ctx, !Verbose, command[0], command[1:]...)
 	if err != nil {
@@ -138,7 +138,7 @@ func RebuildInitramfs(ctx context.Context) error {
 		return fmt.Errorf("initramfs command failed with exit code %d: %v", exitCode, err)
 	}
 
-	fmt.Println("Successfully rebuilt the initramfs!")
+	LogInfo("Successfully rebuilt the initramfs!")
 	return nil
 }
 

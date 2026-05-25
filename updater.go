@@ -81,13 +81,13 @@ func fetchLatestRelease(ctx context.Context, apiURL string) (*GitHubRelease, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to reach GitHub API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusForbidden {
-		return nil, fmt.Errorf("GitHub API rate limit exceeded. Please try updating again later.")
+		return nil, fmt.Errorf("github API rate limit exceeded. Please try updating again later")
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned unexpected status: %s", resp.Status)
+		return nil, fmt.Errorf("github API returned unexpected status: %s", resp.Status)
 	}
 
 	var release GitHubRelease
@@ -135,7 +135,7 @@ func downloadAndReplaceBinary(ctx context.Context, url string) error {
 	if err != nil {
 		return fmt.Errorf("download request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed with HTTP %s", resp.Status)
@@ -148,10 +148,12 @@ func downloadAndReplaceBinary(ctx context.Context, url string) error {
 
 	// Fail-safe cleanup: ensures temp file is removed if the process panics,
 	// is interrupted, or returns early. If os.Rename succeeds, os.Remove safely ignores the missing file.
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	if _, err := io.Copy(outFile, resp.Body); err != nil {
-		outFile.Close()
+		if errClose := outFile.Close(); errClose != nil {
+			LogWarning("failed to close temporary file: %w", err)
+		}
 		return fmt.Errorf("failed to write payload to disk: %w", err)
 	}
 

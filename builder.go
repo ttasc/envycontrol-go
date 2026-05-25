@@ -60,12 +60,13 @@ func planNvidia(plan *TransactionPlan, pciBus string, igpuVendor string, opts Sw
 	mod := opts.NvidiaModule
 
 	if pciBus == "" {
-		return fmt.Errorf("Nvidia PCI Bus ID is missing")
+		return fmt.Errorf("nvidia PCI Bus ID is missing")
 	}
 
-	if igpuVendor == "intel" {
+	switch igpuVendor {
+	case "intel":
 		plan.ToCreate = append(plan.ToCreate, FileConfig{Path: XorgPath, Content: fmt.Sprintf(XorgIntel, pciBus), Executable: false})
-	} else if igpuVendor == "amd" {
+	case "amd":
 		plan.ToCreate = append(plan.ToCreate, FileConfig{Path: XorgPath, Content: fmt.Sprintf(XorgAmd, pciBus), Executable: false})
 	}
 

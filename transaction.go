@@ -72,7 +72,7 @@ func atomicWrite(conf FileConfig) error {
 	if err := os.WriteFile(tmpPath, []byte(conf.Content), mode); err != nil {
 		return err
 	}
-	defer os.Remove(tmpPath) // Cleanup tmp file on failure
+	defer func() { _ = os.Remove(tmpPath) }() // Cleanup tmp file on failure
 
 	// Explicitly apply executable permissions if required
 	if conf.Executable {
@@ -92,7 +92,7 @@ func atomicWrite(conf FileConfig) error {
 
 // createBackup scans the plan for any files that currently exist on the disk
 // and bundles them into an ephemeral tar.gz archive.
-func createBackup(plan TransactionPlan) error {
+func createBackup(plan TransactionPlan) (err error) {
 	pathsToBackup := make(map[string]bool)
 	for _, p := range plan.ToRemove {
 		pathsToBackup[p] = true
@@ -109,13 +109,28 @@ func createBackup(plan TransactionPlan) error {
 	if err != nil {
 		return err
 	}
-	defer backupFile.Close()
+	defer func() {
+		closeErr := backupFile.Close()
+		if err == nil && closeErr != nil {
+			err = fmt.Errorf("failed to flush backup file to disk: %w", closeErr)
+		}
+	}()
 
 	gw := gzip.NewWriter(backupFile)
-	defer gw.Close()
+	defer func() {
+		closeErr := gw.Close()
+		if err == nil && closeErr != nil {
+			err = fmt.Errorf("failed to flush backup file to disk: %w", closeErr)
+		}
+	}()
 
 	tw := tar.NewWriter(gw)
-	defer tw.Close()
+	defer func() {
+		closeErr := tw.Close()
+		if err == nil && closeErr != nil {
+			err = fmt.Errorf("failed to flush backup file to disk: %w", closeErr)
+		}
+	}()
 
 	// Only archive files that actually exist
 	for path := range pathsToBackup {
@@ -137,8 +152,11 @@ func createBackup(plan TransactionPlan) error {
 			}
 
 			_, err = io.Copy(tw, file)
-			file.Close()
+			if err != nil {
+				return err
+			}
 
+			err = file.Close()
 			if err != nil {
 				return err
 			}
@@ -171,13 +189,13 @@ func RollbackTransaction(createdFiles []string) error {
 	if err != nil {
 		return err
 	}
-	defer backupFile.Close()
+	defer func() { _ = backupFile.Close() }()
 
 	gr, err := gzip.NewReader(backupFile)
 	if err != nil {
 		return err
 	}
-	defer gr.Close()
+	defer func() { _ = gr.Close() }()
 
 	tr := tar.NewReader(gr)
 
@@ -207,10 +225,13 @@ func RollbackTransaction(createdFiles []string) error {
 		}
 
 		if _, err := io.Copy(file, tr); err != nil {
-			file.Close()
+			_ = file.Close()
 			return err
 		}
-		file.Close()
+
+		if err := file.Close(); err != nil {
+			return err
+		}
 
 		LogWarning("Rolled back file: %s", targetPath)
 	}

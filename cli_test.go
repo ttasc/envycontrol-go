@@ -6,10 +6,10 @@ import (
 
 func TestParseArgsUpdateFlag(t *testing.T) {
 	tests := []struct {
-		name        string
-		args        []string
-		wantUpdate  bool
-		wantErr     bool
+		name       string
+		args       []string
+		wantUpdate bool
+		wantErr    bool
 	}{
 		{"Long update flag", []string{"envycontrol", "--update"}, true, false},
 		{"Short update flag", []string{"envycontrol", "-u"}, true, false},

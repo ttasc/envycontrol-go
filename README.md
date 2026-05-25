@@ -145,7 +145,7 @@ To ensure your Display Manager routes the screen correctly when exclusively usin
 
 ```bash
 #!/bin/sh
-xrandr --setprovideroutputsource modesetting NVIDIA-0
+[ "$(envycontrol -q)" = "nvidia" ] && xrandr --setprovideroutputsource modesetting NVIDIA-0
 xrandr --auto
 ```
 

@@ -67,7 +67,7 @@ func TestProbeIgpuVendor(t *testing.T) {
 	}
 
 	// Reset and test AMD
-	os.RemoveAll(tmpDir)
+	_ = os.RemoveAll(tmpDir)
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestGuessCurrentMode(t *testing.T) {
 	}
 
 	// Reset
-	os.RemoveAll(tmpDir)
+	_ = os.RemoveAll(tmpDir)
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		t.Fatal(err)
 	}

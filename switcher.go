@@ -12,7 +12,7 @@ import (
 // It coordinates real-time hardware probing, daemon management, plan building,
 // atomic transaction execution, and safe kernel initramfs rebuilding.
 func SwitchMode(targetMode string, opts SwitchOptions) {
-	fmt.Printf("Switching to %s mode\n", targetMode)
+	LogInfo("Switching to %s mode\n", targetMode)
 
 	// Print UX feedback for power management configurations
 	if targetMode == "hybrid" {
@@ -20,7 +20,7 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		if opts.Rtd3Value != nil {
 			rtd3Str = fmt.Sprintf("%d", *opts.Rtd3Value)
 		}
-		fmt.Printf("Enable PCI-Express Runtime D3 (RTD3) Power Management: %s\n", rtd3Str)
+		LogInfo("Enable PCI-Express Runtime D3 (RTD3) Power Management: %s\n", rtd3Str)
 	}
 
 	// In the stateless architecture, we must dynamically probe the SysFS to find
@@ -43,12 +43,12 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 	if targetMode == "integrated" {
 		exitCode, _ := RunCommand(ctxBg, !Verbose, "systemctl", "disable", "nvidia-persistenced.service")
 		if exitCode == 0 {
-			fmt.Println("Successfully disabled nvidia-persistenced.service")
+			LogInfo("Successfully disabled nvidia-persistenced.service")
 		}
 	} else {
 		exitCode, _ := RunCommand(ctxBg, !Verbose, "systemctl", "enable", "nvidia-persistenced.service")
 		if exitCode == 0 {
-			fmt.Println("Successfully enabled nvidia-persistenced.service")
+			LogInfo("Successfully enabled nvidia-persistenced.service")
 		}
 	}
 
@@ -112,15 +112,15 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 	// Safely release the custom signal trap
 	signal.Stop(ignoreChan)
 
-	fmt.Println("Operation completed successfully")
-	fmt.Println("Please reboot your computer for changes to take effect!")
+	LogInfo("Operation completed successfully")
+	LogInfo("Please reboot your computer for changes to take effect!")
 }
 
 // ResetSystem safely removes all configuration files managed by the application.
 // It forces a clean slate and regenerates the initramfs to restore the
 // Linux distribution's vanilla graphical state.
 func ResetSystem() {
-	fmt.Println("Reverting changes made by EnvyControl...")
+	LogInfo("Reverting changes made by EnvyControl...")
 
 	// A plan with an empty ToCreate list forces the Transaction Engine
 	// to perform a safely-backed-up deletion of all managed paths.
@@ -174,5 +174,5 @@ func ResetSystem() {
 	}
 
 	signal.Stop(ignoreChan)
-	fmt.Println("Operation completed successfully")
+	LogInfo("Operation completed successfully")
 }
