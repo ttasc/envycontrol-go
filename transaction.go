@@ -20,7 +20,7 @@ func ExecuteTransaction(plan TransactionPlan) ([]string, error) {
 	// Phase 1: Snapshot existing configuration
 	err := createBackup(plan)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create backup, aborting transaction: %v", err)
+		return nil, fmt.Errorf("failed to create backup, aborting transaction: %w", err)
 	}
 	LogInfo("Created safety backup at %s", BackupFilePath)
 
@@ -42,7 +42,7 @@ func ExecuteTransaction(plan TransactionPlan) ([]string, error) {
 			LogError("Triggering Emergency Rollback...")
 
 			if rbErr := RollbackTransaction(createdFiles); rbErr != nil {
-				return createdFiles, fmt.Errorf("CRITICAL: transaction failed AND rollback failed: %v", rbErr)
+				return createdFiles, fmt.Errorf("CRITICAL: transaction failed AND rollback failed: %w", rbErr)
 			}
 			return createdFiles, fmt.Errorf("transaction failed but system was safely rolled back")
 		}
@@ -77,13 +77,13 @@ func atomicWrite(conf FileConfig) error {
 	// Explicitly apply executable permissions if required
 	if conf.Executable {
 		if err := os.Chmod(tmpPath, 0755); err != nil {
-			return fmt.Errorf("chmod +x failed for %s: %v", tmpPath, err)
+			return fmt.Errorf("chmod +x failed for %s: %w", tmpPath, err)
 		}
 	}
 
 	// Atomically overwrite target path
 	if err := os.Rename(tmpPath, conf.Path); err != nil {
-		return fmt.Errorf("atomic rename failed %s -> %s: %v", tmpPath, conf.Path, err)
+		return fmt.Errorf("atomic rename failed %s -> %s: %w", tmpPath, conf.Path, err)
 	}
 
 	LogInfo("Created file %s", conf.Path)
@@ -102,7 +102,7 @@ func createBackup(plan TransactionPlan) (err error) {
 	}
 
 	if err := os.MkdirAll(filepath.Dir(BackupFilePath), 0755); err != nil {
-		return fmt.Errorf("failed to create backup directory: %v", err)
+		return fmt.Errorf("failed to create backup directory: %w", err)
 	}
 
 	backupFile, err := os.Create(BackupFilePath)
@@ -216,7 +216,7 @@ func RollbackTransaction(createdFiles []string) error {
 
 		// Recreate parent directories in case they were lost
 		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
-			return fmt.Errorf("failed to create %s's parent directory: %v", targetPath, err)
+			return fmt.Errorf("failed to create %s's parent directory: %w", targetPath, err)
 		}
 
 		file, err := os.OpenFile(targetPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(header.Mode))

@@ -135,7 +135,7 @@ func RebuildInitramfs(ctx context.Context) error {
 		if ctx.Err() == context.Canceled {
 			return fmt.Errorf("initramfs rebuild was interrupted by user/system")
 		}
-		return fmt.Errorf("initramfs command failed with exit code %d: %v", exitCode, err)
+		return fmt.Errorf("initramfs command failed with exit code %d: %w", exitCode, err)
 	}
 
 	LogInfo("Successfully rebuilt the initramfs!")

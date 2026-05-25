@@ -38,7 +38,7 @@ func isGraphicsClass(class string) bool {
 func ProbeNvidiaPciBus() (string, error) {
 	entries, err := os.ReadDir(SysfsPciDevicesDir)
 	if err != nil {
-		return "", fmt.Errorf("failed to read sysfs PCI directory: %v", err)
+		return "", fmt.Errorf("failed to read sysfs PCI directory: %w", err)
 	}
 
 	var pciBusID string
