@@ -1,4 +1,3 @@
-```markdown
 # 👁‍🗨 EnvyControl
 
 [![CI](https://github.com/ttasc/envycontrol-go/actions/workflows/ci.yml/badge.svg)](https://github.com/ttasc/envycontrol-go/actions/workflows/ci.yml)
@@ -225,4 +224,3 @@ EnvyControl features a built-in total reset command. This safely removes all gen
 EnvyControl is free and open-source software. Continuing the legacy of the original project, this rewrite is released under the [MIT License](LICENSE).
 
 Found a bug? Have an idea? Pull Requests and Issues are highly welcome! Let's keep the Linux Optimus ecosystem thriving.
-```
