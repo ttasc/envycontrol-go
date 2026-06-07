@@ -55,7 +55,9 @@ func planHybrid(plan *TransactionPlan, opts SwitchOptions) {
 	plan.ToCreate = append(plan.ToCreate, FileConfig{Path: UdevPmPath, Content: UdevPmContent, Executable: false})
 }
 
-// planNvidia populates the plan with rules to force Xorg to route display output through the Nvidia GPU.
+// planNvidia populates the plan with rules to force routing display output through the Nvidia GPU.
+// If the IsWayland option is enabled, it skips generating the legacy Xorg configuration to allow
+// the Wayland compositor to seamlessly manage DRM routing natively.
 func planNvidia(plan *TransactionPlan, pciBus string, igpuVendor string, opts SwitchOptions) error {
 	mod := opts.NvidiaModule
 
@@ -63,13 +65,17 @@ func planNvidia(plan *TransactionPlan, pciBus string, igpuVendor string, opts Sw
 		return fmt.Errorf("nvidia PCI Bus ID is missing")
 	}
 
-	switch igpuVendor {
-	case "intel":
-		plan.ToCreate = append(plan.ToCreate, FileConfig{Path: XorgPath, Content: fmt.Sprintf(XorgIntel, pciBus), Executable: false})
-	case "amd":
-		plan.ToCreate = append(plan.ToCreate, FileConfig{Path: XorgPath, Content: fmt.Sprintf(XorgAmd, pciBus), Executable: false})
+	// Only generate Xorg configurations if we are NOT running in Wayland optimization mode
+	if !opts.IsWayland {
+		switch igpuVendor {
+		case "intel":
+			plan.ToCreate = append(plan.ToCreate, FileConfig{Path: XorgPath, Content: fmt.Sprintf(XorgIntel, pciBus), Executable: false})
+		case "amd":
+			plan.ToCreate = append(plan.ToCreate, FileConfig{Path: XorgPath, Content: fmt.Sprintf(XorgAmd, pciBus), Executable: false})
+		}
 	}
 
+	// Always generate kernel modprobe parameters (required for both X11 and Wayland)
 	content := fmt.Sprintf(ModesetContent, mod, mod)
 	plan.ToCreate = append(plan.ToCreate, FileConfig{Path: ModesetPath, Content: content, Executable: false})
 

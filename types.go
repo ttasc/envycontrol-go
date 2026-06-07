@@ -5,6 +5,7 @@ package main
 type SwitchOptions struct {
 	NvidiaModule string // Target kernel module name (e.g., "nvidia", "nvidia-current")
 	Rtd3Value    *int   // Optional Runtime D3 power management level (0, 1, 2, 3)
+	IsWayland    bool   // Flag to optimize hardware configurations for Wayland instead of X11
 }
 
 // FileConfig represents a single file that needs to be written to the filesystem.

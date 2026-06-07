@@ -1,3 +1,4 @@
+```markdown
 # 👁‍🗨 EnvyControl
 
 [![CI](https://github.com/ttasc/envycontrol-go/actions/workflows/ci.yml/badge.svg)](https://github.com/ttasc/envycontrol-go/actions/workflows/ci.yml)
@@ -21,17 +22,18 @@ This project is the realization of that thought. We owe a massive debt of gratit
 **The Philosophy: "Do one thing and do it well"**
 As Linux desktop environments rapidly evolve (especially with the widespread adoption of Wayland), automatically patching Display Managers and hacking X11 configurations has become fragile and prone to breaking user systems.
 
-This Go rewrite takes a strict Unix philosophy approach: **EnvyControl now ONLY handles PCIe hardware routing, kernel module blacklisting, and RTD3 dynamic power management.** It does not touch your Display Manager, and it does not write custom X11 overclocking files. It prepares the hardware perfectly, leaving UI-layer configurations entirely up to you.
+This Go rewrite takes a strict Unix philosophy approach: **EnvyControl now ONLY handles PCIe hardware routing, kernel module blacklisting, systemd daemon states, and dynamic power management.** It does not touch your Display Manager, and it does not write custom X11 overclocking files. It prepares the hardware perfectly, leaving UI-layer configurations entirely up to you.
 
 ---
 
 ## ✨ Why the Go Rewrite? (What's New)
 
-Rebuilding this tool in Go allowed us to introduce enterprise-grade safety mechanisms:
+Rebuilding this tool in Go allowed us to introduce enterprise-grade safety mechanisms and modern display server support:
 
 *   🛡️ **Atomic Transactions & Rollback:** File operations are no longer sequential writes. Changes are staged and applied atomically. If an error occurs (e.g., out of disk space), an emergency rollback is triggered automatically, ensuring your system is never left in a broken, unbootable state.
 *   🧱 **Signal Shielding (Anti-Brick Protection):** Interrupting the critical `initramfs` rebuild phase (like accidentally pressing `Ctrl+C`) can brick your boot image. EnvyControl now actively intercepts and blocks termination signals during this phase.
 *   🧠 **Stateless Architecture:** The old Python version relied on a `cache.json` file to remember your PCI Bus ID. This rewrite drops the cache entirely. It probes your hardware state directly from the Linux Kernel SysFS (`/sys/bus/pci/`) in real-time.
+*   🚀 **Wayland Native Support:** Built-in `--wayland` flag seamlessly configures kernel modesetting, enables `fbdev`, ensures VRAM persistence, and correctly hooks into Nvidia's sleep/resume systemd services to prevent crashes on modern GNOME/KDE environments.
 *   📦 **Zero Dependencies:** Distributed as a single, statically linked binary. This completely bypasses Python's `PEP668` restrictions, eliminating the annoying `pip install` breakages on modern Debian and Ubuntu releases.
 
 ---
@@ -52,8 +54,8 @@ EnvyControl supports three distinct operational modes:
 
 ### 3. `nvidia`
 *   **How it works:** Forces the Nvidia dGPU to stay awake and handle all rendering.
-*   **Pros:** Maximum performance. Required for reliable external monitor usage on most laptops. Best for fixing X11 screen tearing.
-*   **Cons:** Terrible battery life. Your laptop will run hotter. Wayland sessions may default back to X11 depending on your distro.
+*   **Pros:** Maximum performance. Required for reliable external monitor usage on most laptops. Best for fixing screen tearing on legacy setups.
+*   **Cons:** Terrible battery life. Your laptop will run hotter. *(Note: Requires the `--wayland` flag on modern distros to avoid falling back to X11)*.
 
 ---
 
@@ -72,12 +74,15 @@ make build
 sudo make install
 ```
 
-## ⚙️ Configurations Guide
+## ⚙️ Configurations Guide (X11 Only)
+
+> [!TIP]
+> **Using Wayland?** If you use the `--wayland` flag when switching modes, you can safely skip this entire section! Modern compositors like Mutter (GNOME) and KWin (KDE) will route the hardware correctly out of the box using DRM without needing custom scripts or configs.
 
 > [!NOTE]
-> Because EnvyControl now strictly focuses on hardware states, it **does not** configure your Display Manager or X11 tearing fixes. If you require these features in `nvidia` mode, here is how to apply them manually.
+> Because EnvyControl now strictly focuses on hardware states, it **does not** configure your Display Manager or X11 tearing fixes automatically. If you require these features in `nvidia` mode on legacy X11 sessions, here is how to apply them manually.
 
-### 1. Display Manager Setup (Required for `nvidia` mode)
+### 1. Display Manager Setup (Required for X11 `nvidia` mode)
 To ensure your Display Manager routes the screen correctly when exclusively using the Nvidia GPU, you need to run this `xrandr` script upon login:
 
 ```bash
@@ -89,7 +94,6 @@ xrandr --auto
 **Where to put it:**
 *   **SDDM (KDE):** Append the script to `/usr/share/sddm/scripts/Xsetup`.
 *   **LightDM:** Save the script to `/etc/lightdm/nvidia.sh`, make it executable, and add `display-setup-script=/etc/lightdm/nvidia.sh` to your `/etc/lightdm/lightdm.conf` under the `[Seat:*]` section.
-*   **GDM (GNOME):** GDM heavily favors Wayland now. If you force X11, you may need to place the script in `/etc/gdm3/Init/Default`. However, Wayland usually handles Nvidia routing natively without `xrandr` hacks.
 *   **startx / Window Managers:** Simply add the commands to your `~/.xinitrc` before executing your WM.
 
 ### 2. X11 Hacks (Overclocking & Tearing Fixes)
@@ -119,7 +123,7 @@ Do **not** just delete the binary manually. The system needs to revert the confi
 
 To safely uninstall, simply run:
 ```bash
-# This will safely remove all configs and rebuild your initramfs
+# This will safely remove all configs, restore systemd services, and rebuild your initramfs
 sudo envycontrol --reset
 
 # Then remove the binary and backup data
@@ -139,8 +143,11 @@ sudo rm -rf /var/lib/envycontrol
   /etc/X11/xorg.conf
   /etc/modprobe.d/nvidia.conf
 
-  # 2. EnvyControl's own storage directory (Go version):
+  # 2. EnvyControl's own storage directory:
   /var/lib/envycontrol/ # (Contains the Transaction Engine backup.tar.gz file).
+
+  # 3. Disable Nvidia suspend services:
+  sudo systemctl disable nvidia-persistenced nvidia-suspend nvidia-resume nvidia-hibernate
   ```
 </details>
 
@@ -163,7 +170,12 @@ Switch to Hybrid mode and enable fine-grained RTD3 power control (default level 
 sudo envycontrol -s hybrid --rtd3
 ```
 
-Switch to Nvidia mode:
+Switch to Nvidia mode **(Optimized for Wayland)**:
+```bash
+sudo envycontrol -s nvidia --wayland
+```
+
+Switch to Nvidia mode **(Legacy X11)**:
 ```bash
 sudo envycontrol -s nvidia
 ```
@@ -177,7 +189,7 @@ sudo envycontrol --update
 If your distribution uses a non-standard Nvidia kernel module name (e.g., Debian sometimes uses `nvidia-current`), you can pass the `NV_MODULE` environment variable instead of relying on legacy flags:
 
 ```bash
-sudo NV_MODULE="nvidia-current" envycontrol -s nvidia
+sudo NV_MODULE="nvidia-current" envycontrol -s nvidia --wayland
 ```
 
 ---
@@ -191,25 +203,17 @@ Ubuntu bundles its own Optimus tool which fights with EnvyControl. Disable it be
   sudo systemctl mask gpu-manager.service
   ```
 
-- **Debian Black Screen on Nvidia Mode**</br>
-If you face a black screen upon login, Debian might need an explicit X11 screen refresh. Add this to your user session:
+- **Debian Black Screen on Nvidia Mode (X11)**</br>
+If you face a black screen upon login on X11, Debian might need an explicit screen refresh. Add this to your user session:
   ```bash
   echo "xrandr --auto" >> ~/.xsessionrc
-  ```
-
-- **Wayland session is missing on Gnome 43+**</br>
-GDM now requires `NVreg_PreserveVideoMemoryAllocations` kernel parameter which breaks sleep in nvidia and hybrid mode, as well as rtd3 in hybrid mode, so EnvyControl disables it, if you need a Wayland session follow the instructions below:
-
-  ```bash
-  sudo systemctl enable nvidia-{suspend,resume,hibernate}
-  sudo ln -s /dev/null /etc/udev/rules.d/61-gdm.rules
   ```
 
 - **Display runs at 1 FPS when lid is closed on Hybrid Mode**</br>
 This is a known bug with the proprietary Nvidia Linux drivers and Xorg PRIME implementation. There is no magic fix from EnvyControl's side. You can try disabling DRI3 by adding `LIBGL_DRI3_DISABLE=true` to your `/etc/environment`, but mileage may vary.
 
 - **How do I completely uninstall and revert to defaults?**</br>
-EnvyControl features a built-in total reset command. This safely removes all generated Udev, Modprobe, and Xorg configurations and rebuilds your initramfs to factory defaults.
+EnvyControl features a built-in total reset command. This safely removes all generated Udev, Modprobe, and Xorg configurations, resets systemd sleep daemons, and rebuilds your initramfs to factory defaults.
   ```bash
   sudo envycontrol --reset
   ```
@@ -221,3 +225,4 @@ EnvyControl features a built-in total reset command. This safely removes all gen
 EnvyControl is free and open-source software. Continuing the legacy of the original project, this rewrite is released under the [MIT License](LICENSE).
 
 Found a bug? Have an idea? Pull Requests and Issues are highly welcome! Let's keep the Linux Optimus ecosystem thriving.
+```

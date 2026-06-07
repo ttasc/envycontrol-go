@@ -1,4 +1,3 @@
-// builder_test.go
 package main
 
 import (
@@ -73,7 +72,7 @@ func TestBuildTransactionPlan(t *testing.T) {
 			},
 		},
 		{
-			name:       "Nvidia Mode (Intel iGPU)",
+			name:       "Nvidia Mode (Intel iGPU - X11/Default)",
 			target:     "nvidia",
 			pciBus:     "PCI:1:0:0",
 			igpuVendor: "intel",
@@ -93,6 +92,30 @@ func TestBuildTransactionPlan(t *testing.T) {
 				}
 				if !xorgFound {
 					t.Errorf("Xorg config not created for Nvidia mode")
+				}
+			},
+		},
+		{
+			name:       "Nvidia Mode (Wayland Optimized)",
+			target:     "nvidia",
+			pciBus:     "PCI:1:0:0",
+			igpuVendor: "intel",
+			opts:       SwitchOptions{NvidiaModule: "nvidia", IsWayland: true},
+			checkPlan: func(t *testing.T, plan TransactionPlan) {
+				modesetFound := false
+				for _, f := range plan.ToCreate {
+					if f.Path == XorgPath {
+						t.Errorf("Xorg config should not be created when Wayland optimization is enabled")
+					}
+					if f.Path == ModesetPath {
+						modesetFound = true
+						if !strings.Contains(f.Content, "NVreg_PreserveVideoMemoryAllocations=1") {
+							t.Errorf("Wayland optimized modeset must include PreserveVideoMemoryAllocations")
+						}
+					}
+				}
+				if !modesetFound {
+					t.Errorf("Modeset config not created for Nvidia mode (Wayland)")
 				}
 			},
 		},

@@ -31,3 +31,29 @@ func TestParseArgsUpdateFlag(t *testing.T) {
 		})
 	}
 }
+
+func TestParseArgsWaylandFlag(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		wantWayland bool
+		wantErr     bool
+	}{
+		{"Wayland flag present", []string{"envycontrol", "-s", "nvidia", "--wayland"}, true, false},
+		{"Wayland flag absent", []string{"envycontrol", "-s", "nvidia"}, false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts, err := parseArgsInternal(tt.args)
+
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseArgsInternal() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if !tt.wantErr && opts.Wayland != tt.wantWayland {
+				t.Errorf("Expected Wayland=%v, got %v", tt.wantWayland, opts.Wayland)
+			}
+		})
+	}
+}

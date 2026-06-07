@@ -22,6 +22,9 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		}
 		LogInfo("Enable PCI-Express Runtime D3 (RTD3) Power Management: %s\n", rtd3Str)
 	}
+	if opts.IsWayland {
+		LogInfo("Wayland native optimizations enabled: Skipping Xorg generation")
+	}
 
 	// In the stateless architecture, we must dynamically probe the SysFS to find
 	// the Nvidia PCI Bus ID only when transitioning to 'nvidia' mode.
@@ -37,19 +40,27 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 		igpuVendor = ProbeIgpuVendor()
 	}
 
-	// nvidia-persistenced keeps the kernel module loaded to prevent driver teardown latency.
-	// We disable it in integrated mode so the card can be powered off.
+	// Systemd services management.
+	// We enable suspend/resume services alongside persistenced to ensure Wayland
+	// compatability (NVreg_PreserveVideoMemoryAllocations=1) and prevent driver teardown latency.
 	ctxBg := context.Background()
+	nvidiaServices := []string{
+		"nvidia-persistenced.service",
+		"nvidia-suspend.service",
+		"nvidia-resume.service",
+		"nvidia-hibernate.service",
+	}
+
 	if targetMode == "integrated" {
-		exitCode, _ := RunCommand(ctxBg, !Verbose, "systemctl", "disable", "nvidia-persistenced.service")
-		if exitCode == 0 {
-			LogInfo("Successfully disabled nvidia-persistenced.service")
+		for _, svc := range nvidiaServices {
+			_, _ = RunCommand(ctxBg, !Verbose, "systemctl", "disable", svc)
 		}
+		LogInfo("Successfully disabled Nvidia systemd services")
 	} else {
-		exitCode, _ := RunCommand(ctxBg, !Verbose, "systemctl", "enable", "nvidia-persistenced.service")
-		if exitCode == 0 {
-			LogInfo("Successfully enabled nvidia-persistenced.service")
+		for _, svc := range nvidiaServices {
+			_, _ = RunCommand(ctxBg, !Verbose, "systemctl", "enable", svc)
 		}
+		LogInfo("Successfully enabled Nvidia systemd services (Wayland & Suspend support)")
 	}
 
 	// Calculate the necessary filesystem changes without touching the disk.
@@ -121,6 +132,19 @@ func SwitchMode(targetMode string, opts SwitchOptions) {
 // Linux distribution's vanilla graphical state.
 func ResetSystem() {
 	LogInfo("Reverting changes made by EnvyControl...")
+
+	// Revert systemd services to their disabled default states to prevent
+	// hooks from triggering without the driver configuration present.
+	nvidiaServices := []string{
+		"nvidia-persistenced.service",
+		"nvidia-suspend.service",
+		"nvidia-resume.service",
+		"nvidia-hibernate.service",
+	}
+	for _, svc := range nvidiaServices {
+		_, _ = RunCommand(context.Background(), !Verbose, "systemctl", "disable", svc)
+	}
+	LogInfo("Successfully disabled Nvidia systemd services")
 
 	// A plan with an empty ToCreate list forces the Transaction Engine
 	// to perform a safely-backed-up deletion of all managed paths.

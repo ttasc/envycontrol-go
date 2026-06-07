@@ -10,17 +10,18 @@ import (
 
 // CliOptions represents the parsed configuration derived from command-line arguments.
 type CliOptions struct {
-	Query  bool
-	Switch string
-	Rtd3   *int
-	Reset  bool
-	Update bool // Indicates a request to auto-update the tool
+	Query   bool
+	Switch  string
+	Rtd3    *int
+	Reset   bool
+	Update  bool // Indicates a request to auto-update the tool
+	Wayland bool // Flag to optimize driver configurations for Wayland sessions
 }
 
 // printHelp prints the application's usage instructions, available options,
 // and environment variables to standard output.
 func printHelp() {
-	helpText := `usage: envycontrol [-h] [-v] [-u] [-q] [-s MODE] [--rtd3 [VALUE]] [--reset] [--verbose]
+	helpText := `usage: envycontrol [-h] [-v] [-u] [-q] [-s MODE] [--rtd3 [VALUE]] [--wayland] [--reset] [--verbose]
 
 A minimalist tool for GPU power management on Nvidia Optimus systems.
 
@@ -36,6 +37,7 @@ options:
                       1 = Coarse-grained: Turns off GPU when idle, but keeps memory powered.
                       2 = Fine-grained: Completely turns off GPU and memory when idle. (Default)
                       3 = Fine-grained (Ampere+): Specific to RTX 30-series architectures and newer.
+  --wayland         Optimize kernel parameters and skip Xorg configurations for native Wayland support
   --reset           Revert all changes and restore system defaults
   --verbose         Enable debug logs and system command outputs
 
@@ -115,6 +117,9 @@ func parseArgsInternal(args []string) (CliOptions, error) {
 				i++
 			}
 			opts.Rtd3 = &val
+
+		case "--wayland":
+			opts.Wayland = true
 
 		case "--reset":
 			opts.Reset = true
